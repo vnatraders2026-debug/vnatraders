@@ -11,8 +11,9 @@ import {
   ScrollText,
   Settings,
   LogOut,
-  Flame,
 } from 'lucide-react';
+
+import { VnaLogo } from '@/components/VnaLogo';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -44,17 +45,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   const content = (
     <div className="flex flex-col h-full bg-surface border-r border-border select-none">
-      {/* Brand header */}
-      <div className="h-14 border-b border-border px-4 flex items-center gap-3">
-        <div className="w-8 h-8 rounded bg-accent flex items-center justify-center text-white shrink-0">
-          <Flame size={18} />
-        </div>
-        <div className="overflow-hidden">
-          <h2 className="text-sm font-semibold text-text truncate">Crackers Billing</h2>
-          <span className="text-[10px] uppercase font-bold text-accent tracking-wider">
-            {role}
-          </span>
-        </div>
+      {/* Brand header with VNA Logo */}
+      <div className="h-14 border-b border-border px-4 flex items-center justify-between">
+        <VnaLogo size="sm" />
+        <span className="text-[10px] uppercase font-bold text-accent tracking-wider px-1.5 py-0.5 rounded bg-accent/10">
+          {role}
+        </span>
       </div>
 
       {/* Nav items */}
@@ -110,8 +106,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       {/* Tablet icon rail (72px) */}
       <aside className="hidden sm:block lg:hidden w-16 shrink-0 h-screen sticky top-0 z-30 bg-surface border-r border-border">
         <div className="flex flex-col h-full items-center py-3">
-          <div className="w-8 h-8 rounded bg-accent flex items-center justify-center text-white mb-6">
-            <Flame size={18} />
+          <div className="mb-6">
+            <VnaLogo size="sm" showText={false} />
           </div>
           <div className="flex-1 space-y-2 w-full px-2">
             {navItems.map((item) => {

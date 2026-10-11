@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { db } from '@/db';
+import { db, initLocalDatabase } from '@/db';
 import { Product, OutboxItem } from '@/types';
 import { updateProductInIndex } from '@/db/search';
 import { syncService } from '@/sync/syncService';
@@ -63,7 +63,11 @@ export const ProductsPage: React.FC = () => {
   const loadProducts = async () => {
     setLoading(true);
     try {
-      const all = await db.products.toArray();
+      let all = await db.products.toArray();
+      if (all.length === 0) {
+        await initLocalDatabase();
+        all = await db.products.toArray();
+      }
       setProducts(all);
     } finally {
       setLoading(false);

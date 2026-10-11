@@ -33,7 +33,7 @@ export const AppShell: React.FC = () => {
     if (pathname.startsWith('/users')) return 'Users';
     if (pathname.startsWith('/logs')) return 'Activity Logs';
     if (pathname.startsWith('/settings')) return 'Settings';
-    return 'Crackers Billing';
+    return 'VNA Crackers';
   };
 
   return (

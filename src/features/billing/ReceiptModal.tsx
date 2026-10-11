@@ -129,7 +129,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
             {bill.discount > 0 && (
               <div className="flex justify-between text-success">
-                <span>Discount:</span>
+                <span>
+                  Discount{' '}
+                  {bill.subtotal > 0
+                    ? `(${Math.round((bill.discount / bill.subtotal) * 100)}%)`
+                    : ''}:
+                </span>
                 <span className="tabular-nums">- {formatINR(bill.discount)}</span>
               </div>
             )}

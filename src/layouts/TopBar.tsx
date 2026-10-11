@@ -4,6 +4,8 @@ import { useSync } from '@/sync/useSync';
 import { PlusCircle, Menu, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
+import { VnaLogo } from '@/components/VnaLogo';
+
 interface TopBarProps {
   onToggleMobileMenu: () => void;
   title: string;
@@ -65,7 +67,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleMobileMenu, title }) => 
         >
           <Menu size={20} />
         </button>
-        <h1 className="text-base sm:text-lg font-semibold text-text">{title}</h1>
+        <div className="lg:hidden">
+          <VnaLogo size="sm" showText={false} />
+        </div>
+        <h1 className="text-base sm:text-lg font-bold text-text">{title}</h1>
       </div>
 
       <div className="flex items-center gap-3">

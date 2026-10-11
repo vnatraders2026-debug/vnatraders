@@ -1,25 +1,27 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useCartStore } from './store';
-import { db, getShopSettings } from '@/db';
+import { db, getShopSettings, initLocalDatabase } from '@/db';
 import { searchProducts, createProductSearchIndex } from '@/db/search';
 import { Product, ShopSettings, PaymentMode, Bill, BillItem } from '@/types';
 import { formatINR } from '@/lib/format';
 import { ReceiptModal } from './ReceiptModal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { VnaLogo } from '@/components/VnaLogo';
 import {
   Search,
   Plus,
   Minus,
   Trash2,
   Printer,
-  Save,
   CreditCard,
   Banknote,
   Smartphone,
   ChevronUp,
   X,
+  Percent,
+  Sparkles,
 } from 'lucide-react';
 
 export const NewBillPage: React.FC = () => {
@@ -31,7 +33,7 @@ export const NewBillPage: React.FC = () => {
     items,
     customer_name,
     customer_phone,
-    discount,
+    discount_percent,
     payment_mode,
     editingBillNo,
     addItem,
@@ -40,15 +42,16 @@ export const NewBillPage: React.FC = () => {
     removeItem,
     setCustomerName,
     setCustomerPhone,
-    setDiscount,
+    setDiscountPercent,
     setPaymentMode,
     clearCart,
     getTotals,
     saveBill,
   } = useCartStore();
 
-  // Local search state
+  // Local search and category state
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
@@ -67,7 +70,12 @@ export const NewBillPage: React.FC = () => {
   // Load products from Dexie and prepare MiniSearch
   useEffect(() => {
     async function loadData() {
-      const prods = await db.products.where('is_active').equals(1).toArray();
+      let all = await db.products.toArray();
+      if (all.length === 0) {
+        await initLocalDatabase();
+        all = await db.products.toArray();
+      }
+      const prods = all.filter((p) => p.is_active);
       setAllProducts(prods);
       createProductSearchIndex(prods);
 
@@ -77,15 +85,28 @@ export const NewBillPage: React.FC = () => {
     loadData();
   }, []);
 
+  // Distinct categories list
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    allProducts.forEach((p) => {
+      if (p.category) set.add(p.category);
+    });
+    return ['All', ...Array.from(set).sort()];
+  }, [allProducts]);
+
   // Filtered search results
   const searchResults = useMemo(() => {
-    return searchProducts(searchQuery, allProducts).slice(0, 30);
-  }, [searchQuery, allProducts]);
+    let prods = searchProducts(searchQuery, allProducts);
+    if (selectedCategory !== 'All') {
+      prods = prods.filter((p) => p.category === selectedCategory);
+    }
+    return prods.slice(0, 40);
+  }, [searchQuery, selectedCategory, allProducts]);
 
   // Keep highlighted index in bounds
   useEffect(() => {
     setHighlightedIndex(0);
-  }, [searchQuery]);
+  }, [searchQuery, selectedCategory]);
 
   // Keyboard navigation & shortcuts
   useEffect(() => {
@@ -133,11 +154,10 @@ export const NewBillPage: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchResults, highlightedIndex, items, discount, customer_name, customer_phone, payment_mode]);
+  }, [searchResults, highlightedIndex, items, discount_percent, customer_name, customer_phone, payment_mode]);
 
-  const handleProductSelect = (product: Product) => {
-    addItem(product);
-    setSearchQuery('');
+  const handleProductSelect = (product: Product, quantity: number = 1) => {
+    addItem(product, quantity);
     searchInputRef.current?.focus();
   };
 
@@ -161,37 +181,28 @@ export const NewBillPage: React.FC = () => {
     }
   };
 
-  const { subtotal, discount: validDiscount, total } = getTotals();
+  const { subtotal, discountPercent, discount, total } = getTotals();
 
   return (
     <div className="flex flex-col h-[calc(100dvh-5.5rem)]">
-      {/* Keyboard Shortcuts Hint Bar (Desktop) */}
-      <div className="hidden lg:flex items-center justify-between pb-2 mb-2 text-xs text-text-muted border-b border-border">
-        <div className="flex items-center gap-4">
-          <span>
-            <kbd className="px-1.5 py-0.5 bg-surface border border-border rounded font-mono text-[11px]">/</kbd>{' '}
-            Focus Search
-          </span>
-          <span>
-            <kbd className="px-1.5 py-0.5 bg-surface border border-border rounded font-mono text-[11px]">↑ / ↓</kbd>{' '}
-            Navigate
-          </span>
-          <span>
-            <kbd className="px-1.5 py-0.5 bg-surface border border-border rounded font-mono text-[11px]">Enter</kbd>{' '}
-            Add Item
-          </span>
-          <span>
-            <kbd className="px-1.5 py-0.5 bg-surface border border-border rounded font-mono text-[11px]">Ctrl+Enter</kbd>{' '}
-            Save Bill
-          </span>
-          <span>
-            <kbd className="px-1.5 py-0.5 bg-surface border border-border rounded font-mono text-[11px]">Esc</kbd>{' '}
-            Clear
-          </span>
+      {/* VNA Modern Header Bar & Shortcuts */}
+      <div className="hidden lg:flex items-center justify-between pb-2.5 mb-2.5 text-xs border-b border-border">
+        <div className="flex items-center gap-3">
+          <VnaLogo size="sm" />
+          <span className="text-text-muted">•</span>
+          <span className="text-text-muted font-medium">Terminal Mode: Instant Offline</span>
+          {editingBillNo && (
+            <span className="font-bold text-accent px-2 py-0.5 rounded bg-accent/10">
+              Editing Bill: {editingBillNo}
+            </span>
+          )}
         </div>
-        {editingBillNo && (
-          <span className="text-accent font-semibold">Editing Bill: {editingBillNo}</span>
-        )}
+
+        <div className="flex items-center gap-3 text-text-muted font-mono text-[11px]">
+          <span><kbd className="px-1.5 py-0.5 bg-surface border border-border rounded text-text">/</kbd> Search</span>
+          <span><kbd className="px-1.5 py-0.5 bg-surface border border-border rounded text-text">Enter</kbd> Add</span>
+          <span><kbd className="px-1.5 py-0.5 bg-surface border border-border rounded text-text">Ctrl+Enter</kbd> Save</span>
+        </div>
       </div>
 
       {/* Main Two-Pane Split Layout */}
@@ -209,9 +220,9 @@ export const NewBillPage: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search crackers by name, code or category... (/)"
+              placeholder="Search VNA crackers by code (e.g. SPK-01), name, or type... (/)"
               autoFocus
-              className="w-full pl-9 pr-8 min-h-[44px] text-base sm:text-sm bg-background text-text border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
+              className="w-full pl-9 pr-8 min-h-[44px] text-base sm:text-sm bg-background text-text border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent font-medium"
             />
             {searchQuery && (
               <button
@@ -223,11 +234,31 @@ export const NewBillPage: React.FC = () => {
             )}
           </div>
 
+          {/* Category Filter Chips Bar */}
+          <div className="flex items-center gap-1.5 pb-2.5 mb-2 overflow-x-auto no-scrollbar border-b border-border">
+            {categories.map((cat) => {
+              const isSelected = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded text-xs font-semibold whitespace-nowrap transition-colors min-h-[32px] ${
+                    isSelected
+                      ? 'bg-accent text-white shadow-subtle'
+                      : 'bg-background text-text-muted hover:text-text hover:bg-border/60'
+                  }`}
+                >
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Instant Search Results / Product List */}
           <div className="flex-1 overflow-y-auto divide-y divide-border border border-border rounded bg-background">
             {searchResults.length === 0 ? (
               <div className="p-8 text-center text-sm text-text-muted">
-                No matching crackers found for &ldquo;{searchQuery}&rdquo;
+                No crackers found matching &ldquo;{searchQuery}&rdquo; in category {selectedCategory}
               </div>
             ) : (
               searchResults.map((prod, index) => {
@@ -237,39 +268,69 @@ export const NewBillPage: React.FC = () => {
                 return (
                   <div
                     key={prod.id}
-                    onClick={() => handleProductSelect(prod)}
-                    className={`p-3 flex items-center justify-between cursor-pointer transition-colors ${
+                    className={`p-3 flex items-center justify-between transition-colors ${
                       isSelected
                         ? 'bg-accent/10 border-l-4 border-accent'
                         : 'hover:bg-surface border-l-4 border-transparent'
                     }`}
                   >
-                    <div className="min-w-0 pr-2">
+                    <div
+                      className="min-w-0 pr-3 flex-1 cursor-pointer"
+                      onClick={() => handleProductSelect(prod, 1)}
+                    >
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-semibold px-1.5 py-0.5 bg-surface border border-border rounded text-text">
+                        <span className="font-mono text-xs font-bold px-1.5 py-0.5 bg-surface border border-border rounded text-text">
                           {prod.code}
                         </span>
-                        <span className="text-sm font-medium text-text truncate">
+                        <span className="text-sm font-semibold text-text truncate">
                           {prod.name}
                         </span>
                         {inCart && (
-                          <span className="text-xs font-semibold px-2 py-0.5 bg-accent text-white rounded">
-                            {inCart.qty} in bill
+                          <span className="text-[11px] font-bold px-2 py-0.5 bg-accent text-white rounded">
+                            {inCart.qty} added
                           </span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-xs text-text-muted">
-                        <span>{prod.category}</span>
+                        <span className="font-medium text-text">{prod.category}</span>
                         <span>•</span>
-                        <span>Stock: {prod.stock} {prod.unit}</span>
+                        <span
+                          className={`font-medium ${
+                            prod.stock <= 20 ? 'text-danger font-semibold' : 'text-text-muted'
+                          }`}
+                        >
+                          Stock: {prod.stock} {prod.unit}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="text-right shrink-0">
-                      <span className="text-sm font-semibold tabular-nums text-text">
-                        {formatINR(prod.price)}
-                      </span>
-                      <p className="text-[10px] text-text-muted">per {prod.unit}</p>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right">
+                        <span className="text-sm font-bold tabular-nums text-text">
+                          {formatINR(prod.price)}
+                        </span>
+                        <p className="text-[10px] text-text-muted">per {prod.unit}</p>
+                      </div>
+
+                      {/* Quick Add Action Buttons */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleProductSelect(prod, 1)}
+                          className="px-2.5 py-1 text-xs font-bold bg-accent text-white rounded hover:bg-accent-hover min-h-[32px] transition-colors"
+                          title="Add 1 to bill"
+                        >
+                          +1
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleProductSelect(prod, 5)}
+                          className="px-2 py-1 text-xs font-medium bg-surface border border-border text-text rounded hover:bg-background min-h-[32px] hidden sm:inline-block"
+                          title="Add 5 to bill"
+                        >
+                          +5
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -278,12 +339,13 @@ export const NewBillPage: React.FC = () => {
           </div>
         </div>
 
-        {/* RIGHT PANE: Current Bill Panel (5 cols on desktop, hidden on mobile in favor of bottom sheet) */}
+        {/* RIGHT PANE: Current Bill Panel (5 cols on desktop) */}
         <div className="hidden lg:flex lg:col-span-5 flex-col min-h-0 bg-surface border border-border rounded p-4">
           <BillPaneContent
             items={items}
             subtotal={subtotal}
-            discount={validDiscount}
+            discountPercent={discountPercent}
+            discountAmount={discount}
             total={total}
             customer_name={customer_name}
             customer_phone={customer_phone}
@@ -296,7 +358,7 @@ export const NewBillPage: React.FC = () => {
             removeItem={removeItem}
             setCustomerName={setCustomerName}
             setCustomerPhone={setCustomerPhone}
-            setDiscount={setDiscount}
+            setDiscountPercent={setDiscountPercent}
             setPaymentMode={setPaymentMode}
             clearCart={clearCart}
             onSaveBill={handleSaveBill}
@@ -309,6 +371,7 @@ export const NewBillPage: React.FC = () => {
         <div>
           <div className="text-xs text-text-muted">
             {items.length} {items.length === 1 ? 'item' : 'items'}
+            {discountPercent > 0 && ` (${discountPercent}% off)`}
           </div>
           <div className="text-base font-bold tabular-nums text-accent">
             {formatINR(total)}
@@ -322,7 +385,7 @@ export const NewBillPage: React.FC = () => {
             onClick={() => setIsMobileSheetOpen(true)}
             disabled={items.length === 0}
           >
-            <span>View Bill</span>
+            <span>Bill ({items.length})</span>
             <ChevronUp size={16} />
           </Button>
 
@@ -332,8 +395,8 @@ export const NewBillPage: React.FC = () => {
             onClick={handleSaveBill}
             disabled={items.length === 0 || isSaving}
           >
-            <Save size={16} />
-            <span>{isSaving ? 'Saving...' : 'Save'}</span>
+            <Printer size={16} />
+            <span>{isSaving ? 'Saving...' : 'Print'}</span>
           </Button>
         </div>
       </div>
@@ -343,7 +406,7 @@ export const NewBillPage: React.FC = () => {
         <div className="lg:hidden fixed inset-0 z-50 bg-surface flex flex-col">
           <div className="p-4 border-b border-border flex items-center justify-between">
             <div>
-              <h2 className="text-base font-bold text-text">Current Bill</h2>
+              <h2 className="text-base font-bold text-text">VNA Crackers - Current Bill</h2>
               <p className="text-xs text-text-muted">{items.length} items added</p>
             </div>
             <button
@@ -358,7 +421,8 @@ export const NewBillPage: React.FC = () => {
             <BillPaneContent
               items={items}
               subtotal={subtotal}
-              discount={validDiscount}
+              discountPercent={discountPercent}
+              discountAmount={discount}
               total={total}
               customer_name={customer_name}
               customer_phone={customer_phone}
@@ -371,7 +435,7 @@ export const NewBillPage: React.FC = () => {
               removeItem={removeItem}
               setCustomerName={setCustomerName}
               setCustomerPhone={setCustomerPhone}
-              setDiscount={setDiscount}
+              setDiscountPercent={setDiscountPercent}
               setPaymentMode={setPaymentMode}
               clearCart={clearCart}
               onSaveBill={handleSaveBill}
@@ -393,7 +457,6 @@ export const NewBillPage: React.FC = () => {
             searchInputRef.current?.focus();
           }}
           onEditBill={() => {
-            // Load bill into cart for editing
             useCartStore.getState().loadBillForEdit(savedReceiptData.bill, savedReceiptData.items);
             setSavedReceiptData(null);
           }}
@@ -404,10 +467,61 @@ export const NewBillPage: React.FC = () => {
   );
 };
 
+const EditablePriceField: React.FC<{
+  initialPrice: number;
+  onPriceChange: (newPrice: number) => void;
+}> = ({ initialPrice, onPriceChange }) => {
+  const [val, setVal] = useState(String(initialPrice));
+
+  useEffect(() => {
+    setVal(String(initialPrice));
+  }, [initialPrice]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    if (/^\d*\.?\d*$/.test(raw)) {
+      setVal(raw);
+      const parsed = parseFloat(raw);
+      if (!isNaN(parsed) && parsed >= 0) {
+        onPriceChange(parsed);
+      }
+    }
+  };
+
+  const handleBlur = () => {
+    const parsed = parseFloat(val);
+    if (isNaN(parsed) || parsed < 0) {
+      setVal(String(initialPrice));
+      onPriceChange(initialPrice);
+    } else {
+      setVal(String(parsed));
+      onPriceChange(parsed);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1 bg-surface border border-border rounded px-2 py-1 focus-within:ring-2 focus-within:ring-accent focus-within:border-accent transition-colors shadow-sm">
+      <span className="text-text-muted font-bold text-xs select-none">@ ₹</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={val}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        onFocus={(e) => e.target.select()}
+        placeholder="0.00"
+        className="w-20 text-right text-xs font-bold font-mono tabular-nums bg-transparent text-text focus:outline-none"
+        title="Click to edit unit price (type new price directly)"
+      />
+    </div>
+  );
+};
+
 interface BillPaneContentProps {
   items: any[];
   subtotal: number;
-  discount: number;
+  discountPercent: number;
+  discountAmount: number;
   total: number;
   customer_name: string;
   customer_phone: string;
@@ -420,7 +534,7 @@ interface BillPaneContentProps {
   removeItem: (id: string) => void;
   setCustomerName: (name: string) => void;
   setCustomerPhone: (phone: string) => void;
-  setDiscount: (discount: number) => void;
+  setDiscountPercent: (percent: number) => void;
   setPaymentMode: (mode: PaymentMode) => void;
   clearCart: () => void;
   onSaveBill: () => void;
@@ -429,7 +543,8 @@ interface BillPaneContentProps {
 const BillPaneContent: React.FC<BillPaneContentProps> = ({
   items,
   subtotal,
-  discount,
+  discountPercent,
+  discountAmount,
   total,
   customer_name,
   customer_phone,
@@ -442,27 +557,29 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
   removeItem,
   setCustomerName,
   setCustomerPhone,
-  setDiscount,
+  setDiscountPercent,
   setPaymentMode,
   clearCart,
   onSaveBill,
 }) => {
+  const discountPresets = [0, 5, 10, 15, 20, 25];
+
   return (
     <div className="flex flex-col h-full">
       {/* Pane Title & Clear Button */}
       <div className="flex items-center justify-between pb-3 border-b border-border mb-3">
         <div>
-          <h2 className="text-sm font-semibold text-text">
-            {editingBillNo ? `Editing ${editingBillNo}` : 'Current Bill'}
+          <h2 className="text-sm font-bold text-text">
+            {editingBillNo ? `Editing Bill: ${editingBillNo}` : 'Current Bill'}
           </h2>
           <span className="text-xs text-text-muted">
-            {items.length} {items.length === 1 ? 'item' : 'items'}
+            {items.length} {items.length === 1 ? 'line item' : 'line items'}
           </span>
         </div>
         {items.length > 0 && (
           <button
             onClick={clearCart}
-            className="text-xs text-danger hover:underline font-medium focus:outline-none"
+            className="text-xs text-danger hover:underline font-semibold focus:outline-none"
           >
             Clear All
           </button>
@@ -478,17 +595,19 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
       {/* Bill Items List */}
       <div className="flex-1 overflow-y-auto space-y-2 mb-3 pr-1">
         {items.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-sm text-text-muted p-8 text-center border border-dashed border-border rounded">
-            No items in bill yet. Type cracker name or code to add.
+          <div className="h-full flex flex-col items-center justify-center text-sm text-text-muted p-8 text-center border border-dashed border-border rounded">
+            <Sparkles size={24} className="text-accent mb-2" />
+            <p className="font-medium text-text">Bill is Empty</p>
+            <p className="text-xs text-text-muted mt-1">Select crackers from the left or press / to search</p>
           </div>
         ) : (
           items.map((item) => (
             <div
               key={item.id}
-              className="p-2.5 bg-background border border-border rounded flex flex-col gap-2 text-xs"
+              className="p-2.5 bg-background border border-border rounded flex flex-col gap-2 text-xs transition-colors hover:border-text-muted/40"
             >
               <div className="flex items-center justify-between">
-                <span className="font-medium text-text truncate max-w-[200px]">
+                <span className="font-semibold text-text truncate max-w-[220px]">
                   {item.product_name}
                 </span>
                 <button
@@ -506,7 +625,7 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
                   <button
                     onClick={() => updateQty(item.id, item.qty - 1)}
                     disabled={item.qty <= 1}
-                    className="p-1.5 text-text-muted hover:text-text disabled:opacity-30 min-w-[32px] flex items-center justify-center"
+                    className="p-1.5 text-text-muted hover:text-text disabled:opacity-30 min-w-[32px] flex items-center justify-center font-bold"
                     aria-label="Decrease quantity"
                   >
                     <Minus size={12} />
@@ -516,31 +635,25 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
                     min="1"
                     value={item.qty}
                     onChange={(e) => updateQty(item.id, parseInt(e.target.value) || 1)}
-                    className="w-12 text-center text-xs font-semibold tabular-nums bg-transparent border-x border-border focus:outline-none"
+                    className="w-12 text-center text-xs font-bold tabular-nums bg-transparent border-x border-border focus:outline-none"
                   />
                   <button
                     onClick={() => updateQty(item.id, item.qty + 1)}
-                    className="p-1.5 text-text-muted hover:text-text min-w-[32px] flex items-center justify-center"
+                    className="p-1.5 text-text-muted hover:text-text min-w-[32px] flex items-center justify-center font-bold"
                     aria-label="Increase quantity"
                   >
                     <Plus size={12} />
                   </button>
                 </div>
 
-                {/* Unit price input */}
-                <div className="flex items-center gap-1">
-                  <span className="text-text-muted">@ ₹</span>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={item.unit_price}
-                    onChange={(e) => updatePrice(item.id, parseFloat(e.target.value) || 0)}
-                    className="w-16 px-1.5 py-1 text-right text-xs font-mono tabular-nums bg-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent"
-                  />
-                </div>
+                {/* Editable Unit Price Field */}
+                <EditablePriceField
+                  initialPrice={item.unit_price}
+                  onPriceChange={(newPrice) => updatePrice(item.id, newPrice)}
+                />
 
                 {/* Line Total */}
-                <div className="text-right font-semibold text-text tabular-nums text-xs">
+                <div className="text-right font-bold text-text tabular-nums text-xs">
                   {formatINR(item.line_total)}
                 </div>
               </div>
@@ -570,7 +683,7 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
 
         {/* Payment Mode Pills */}
         <div className="flex items-center gap-2">
-          <span className="text-xs text-text-muted font-medium">Payment:</span>
+          <span className="text-xs text-text-muted font-semibold">Payment:</span>
           <div className="grid grid-cols-3 gap-2 flex-1">
             {(['cash', 'upi', 'card'] as PaymentMode[]).map((mode) => {
               const icons = { cash: Banknote, upi: Smartphone, card: CreditCard };
@@ -582,9 +695,9 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
                   key={mode}
                   type="button"
                   onClick={() => setPaymentMode(mode)}
-                  className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded border text-xs font-medium uppercase transition-colors min-h-[36px] ${
+                  className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded border text-xs font-bold uppercase transition-colors min-h-[36px] ${
                     isSelected
-                      ? 'border-accent bg-accent text-white'
+                      ? 'border-accent bg-accent text-white shadow-subtle'
                       : 'border-border bg-surface text-text hover:bg-background'
                   }`}
                 >
@@ -596,52 +709,85 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
           </div>
         </div>
 
-        {/* Discount Field */}
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-text-muted">Discount (₹):</span>
-          <input
-            type="number"
-            min="0"
-            max={subtotal}
-            value={discount || ''}
-            placeholder="0.00"
-            onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-            className="w-28 px-2 py-1 text-right text-xs font-mono tabular-nums bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent"
-          />
+        {/* MODERN PERCENTAGE DISCOUNT CONTROLLER */}
+        <div className="space-y-1.5 bg-background p-2.5 rounded border border-border">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1 font-semibold text-text">
+              <Percent size={13} className="text-accent" />
+              <span>Discount (%):</span>
+            </div>
+            {discountPercent > 0 && (
+              <span className="text-xs font-semibold text-success tabular-nums">
+                - {formatINR(discountAmount)} ({discountPercent}% off)
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {discountPresets.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setDiscountPercent(preset)}
+                className={`px-2 py-1 text-xs font-bold rounded border transition-colors min-h-[28px] ${
+                  discountPercent === preset
+                    ? 'bg-accent text-white border-accent'
+                    : 'bg-surface text-text border-border hover:bg-border/40'
+                }`}
+              >
+                {preset}%
+              </button>
+            ))}
+
+            <div className="flex items-center gap-1 ml-auto">
+              <span className="text-[11px] text-text-muted font-medium">Custom:</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={discountPercent || ''}
+                placeholder="0"
+                onChange={(e) => setDiscountPercent(parseFloat(e.target.value) || 0)}
+                className="w-14 px-1.5 py-1 text-right text-xs font-bold font-mono tabular-nums bg-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              <span className="text-xs text-text-muted font-bold">%</span>
+            </div>
+          </div>
         </div>
 
         {/* Totals Summary */}
         <div className="space-y-1 pt-2 border-t border-border text-xs">
-          <div className="flex justify-between text-text-muted">
+          <div className="flex justify-between text-text-muted font-medium">
             <span>Subtotal:</span>
             <span className="tabular-nums font-mono">{formatINR(subtotal)}</span>
           </div>
-          {discount > 0 && (
-            <div className="flex justify-between text-success">
-              <span>Discount applied:</span>
-              <span className="tabular-nums font-mono">- {formatINR(discount)}</span>
+
+          {discountAmount > 0 && (
+            <div className="flex justify-between text-success font-semibold">
+              <span>Discount ({discountPercent}%):</span>
+              <span className="tabular-nums font-mono">- {formatINR(discountAmount)}</span>
             </div>
           )}
+
           <div className="flex justify-between items-center text-sm font-bold text-text pt-1 border-t border-border">
-            <span>Total Payable:</span>
-            <span className="text-base text-accent tabular-nums font-mono">
+            <span>Grand Total:</span>
+            <span className="text-lg text-accent tabular-nums font-mono font-black">
               {formatINR(total)}
             </span>
           </div>
         </div>
 
-        {/* Save & Print Action Buttons */}
-        <div className="grid grid-cols-1 gap-2 pt-2">
-          <Button
-            variant="primary"
-            onClick={onSaveBill}
-            disabled={items.length === 0 || isSaving}
-            fullWidth
-          >
-            <Printer size={16} />
-            <span>{isSaving ? 'Saving Bill...' : 'Save & Print Receipt (Ctrl+Enter)'}</span>
-          </Button>
-        </div>
+        {/* Save & Print Action Button */}
+        <Button
+          variant="primary"
+          onClick={onSaveBill}
+          disabled={items.length === 0 || isSaving}
+          fullWidth
+          className="text-sm font-bold py-2.5"
+        >
+          <Printer size={16} />
+          <span>{isSaving ? 'Saving Bill...' : 'Save & Print Receipt (Ctrl+Enter)'}</span>
+        </Button>
       </div>
     </div>
   );

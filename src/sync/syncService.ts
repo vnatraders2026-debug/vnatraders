@@ -219,7 +219,8 @@ class SyncService {
     if (!prodErr && serverProducts && serverProducts.length > 0) {
       await db.products.bulkPut(serverProducts as Product[]);
       // Re-index search
-      const allActive = await db.products.where('is_active').equals(1).toArray();
+      const allProds = await db.products.toArray();
+      const allActive = allProds.filter((p) => p.is_active);
       createProductSearchIndex(allActive);
 
       const latestProdDate = serverProducts.reduce((max, p) => (p.updated_at > max ? p.updated_at : max), prodMeta?.last_synced_at || new Date().toISOString());

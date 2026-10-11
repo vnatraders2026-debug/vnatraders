@@ -20,7 +20,7 @@ interface CartState {
   items: CartItem[];
   customer_name: string;
   customer_phone: string;
-  discount: number;
+  discount_percent: number;
   payment_mode: PaymentMode;
   editingBillId: string | null;
   editingBillNo: string | null;
@@ -32,13 +32,13 @@ interface CartState {
   removeItem: (itemId: string) => void;
   setCustomerName: (name: string) => void;
   setCustomerPhone: (phone: string) => void;
-  setDiscount: (discount: number) => void;
+  setDiscountPercent: (percent: number) => void;
   setPaymentMode: (mode: PaymentMode) => void;
   clearCart: () => void;
   loadBillForEdit: (bill: Bill, items: BillItem[]) => void;
 
   // Derived totals
-  getTotals: () => { subtotal: number; discount: number; total: number };
+  getTotals: () => { subtotal: number; discountPercent: number; discount: number; total: number };
 
   // Save bill
   saveBill: (currentUser: Profile) => Promise<{ bill: Bill; items: BillItem[] }>;
@@ -48,7 +48,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   customer_name: '',
   customer_phone: '',
-  discount: 0,
+  discount_percent: 0,
   payment_mode: 'cash',
   editingBillId: null,
   editingBillNo: null,
@@ -121,7 +121,7 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   setCustomerName: (name: string) => set({ customer_name: name }),
   setCustomerPhone: (phone: string) => set({ customer_phone: phone }),
-  setDiscount: (discount: number) => set({ discount: Math.max(0, discount) }),
+  setDiscountPercent: (percent: number) => set({ discount_percent: Math.max(0, Math.min(100, percent)) }),
   setPaymentMode: (mode: PaymentMode) => set({ payment_mode: mode }),
 
   clearCart: () =>
@@ -129,7 +129,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       items: [],
       customer_name: '',
       customer_phone: '',
-      discount: 0,
+      discount_percent: 0,
       payment_mode: 'cash',
       editingBillId: null,
       editingBillNo: null,
@@ -148,11 +148,14 @@ export const useCartStore = create<CartState>((set, get) => ({
       stock: 999,
     }));
 
+    const calculatedPct =
+      bill.subtotal > 0 ? Math.round((bill.discount / bill.subtotal) * 100) : 0;
+
     set({
       items: loadedItems,
       customer_name: bill.customer_name || '',
       customer_phone: bill.customer_phone || '',
-      discount: bill.discount,
+      discount_percent: calculatedPct,
       payment_mode: bill.payment_mode,
       editingBillId: bill.id,
       editingBillNo: bill.bill_no,
@@ -160,8 +163,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   getTotals: () => {
-    const { items, discount } = get();
-    return calculateBillTotals(items, discount);
+    const { items, discount_percent } = get();
+    return calculateBillTotals(items, discount_percent);
   },
 
   saveBill: async (currentUser: Profile) => {

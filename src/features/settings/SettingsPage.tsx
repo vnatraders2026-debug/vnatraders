@@ -114,7 +114,7 @@ export const SettingsPage: React.FC = () => {
               label="Retail Shop Name"
               value={settings.shop_name}
               onChange={(e) => setSettings({ ...settings, shop_name: e.target.value })}
-              placeholder="Sri Murugan Crackers"
+              placeholder="VNA Crackers"
               required
             />
 
@@ -123,7 +123,7 @@ export const SettingsPage: React.FC = () => {
               type="tel"
               value={settings.shop_phone}
               onChange={(e) => setSettings({ ...settings, shop_phone: e.target.value })}
-              placeholder="+91 98421 54321"
+              placeholder="+91 94431 23456"
               required
             />
           </div>
@@ -132,7 +132,7 @@ export const SettingsPage: React.FC = () => {
             label="Shop Address"
             value={settings.shop_address}
             onChange={(e) => setSettings({ ...settings, shop_address: e.target.value })}
-            placeholder="Main Bazaar, Sivakasi, Tamil Nadu - 626123"
+            placeholder="142 Kakkan Road, Sivakasi, Tamil Nadu - 626123"
             required
           />
 
@@ -141,14 +141,14 @@ export const SettingsPage: React.FC = () => {
               label="GSTIN Number (Optional)"
               value={settings.gst_no}
               onChange={(e) => setSettings({ ...settings, gst_no: e.target.value })}
-              placeholder="33AAAAA0000A1Z5"
+              placeholder="33VNACK0000A1Z5"
             />
 
             <Input
               label="Receipt Footer Notice"
               value={settings.receipt_footer}
               onChange={(e) => setSettings({ ...settings, receipt_footer: e.target.value })}
-              placeholder="Happy Diwali! Goods once sold cannot be returned."
+              placeholder="Thank you for choosing VNA Crackers!"
             />
           </div>
         </div>

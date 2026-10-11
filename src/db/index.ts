@@ -13,11 +13,11 @@ import {
 import { getISTYYMMDD, formatBillNo } from '@/lib/format';
 
 export const DEFAULT_SETTINGS: ShopSettings = {
-  shop_name: 'Sri Murugan Crackers',
-  shop_address: '142 Main Road, Sivakasi, Tamil Nadu - 626123',
-  shop_phone: '+91 98421 54321',
-  gst_no: '33AAAAA0000A1Z5',
-  receipt_footer: 'Wishing you a bright and safe Diwali! Sold items cannot be taken back.',
+  shop_name: 'VNA Crackers',
+  shop_address: '142 Kakkan Road, Sivakasi, Tamil Nadu - 626123',
+  shop_phone: '+91 94431 23456',
+  gst_no: '33VNACK0000A1Z5',
+  receipt_footer: 'Thank you for choosing VNA Crackers! Wishing you a bright and safe celebration.',
   device_code: 'A',
   paper_size: '80mm',
 };
@@ -72,8 +72,12 @@ export class CrackersBillingDB extends Dexie {
       settings: 'key',
       sync_meta: 'table_name',
       device_sequence: 'date_device',
-      profiles: 'id, role, is_active',
+      profiles: 'id, role, is_active, email',
       activity_logs: '++id, created_at, action, entity, entity_id',
+    });
+
+    this.version(2).stores({
+      profiles: 'id, role, is_active, email',
     });
   }
 }
@@ -86,7 +90,7 @@ export const db = new CrackersBillingDB();
 export async function initLocalDatabase(): Promise<void> {
   // Check settings
   const currentSettings = await db.settings.get('shop_settings');
-  if (!currentSettings) {
+  if (!currentSettings || currentSettings.value?.shop_name === 'Sri Murugan Crackers') {
     await db.settings.put({ key: 'shop_settings', value: DEFAULT_SETTINGS });
   }
 
@@ -102,25 +106,26 @@ export async function initLocalDatabase(): Promise<void> {
     await db.products.bulkPut(seeded);
   }
 
-  // Seed default admin profile if profiles table is empty (for offline demo mode)
-  const profileCount = await db.profiles.count();
-  if (profileCount === 0) {
-    await db.profiles.bulkPut([
-      {
-        id: '00000000-0000-0000-0000-000000000001',
-        full_name: 'Admin Manager',
-        role: 'admin',
-        is_active: true,
-        email: 'admin@crackers.local',
-      },
-      {
-        id: '00000000-0000-0000-0000-000000000002',
-        full_name: 'Staff Cashier',
-        role: 'staff',
-        is_active: true,
-        email: 'staff@crackers.local',
-      },
-    ]);
+  // Guarantee demo admin and staff accounts exist
+  const adminProf = await db.profiles.get('00000000-0000-0000-0000-000000000001');
+  if (!adminProf) {
+    await db.profiles.put({
+      id: '00000000-0000-0000-0000-000000000001',
+      full_name: 'Admin Manager',
+      role: 'admin',
+      is_active: true,
+      email: 'admin@crackers.local',
+    });
+  }
+  const staffProf = await db.profiles.get('00000000-0000-0000-0000-000000000002');
+  if (!staffProf) {
+    await db.profiles.put({
+      id: '00000000-0000-0000-0000-000000000002',
+      full_name: 'Staff Cashier',
+      role: 'staff',
+      is_active: true,
+      email: 'staff@crackers.local',
+    });
   }
 }
 

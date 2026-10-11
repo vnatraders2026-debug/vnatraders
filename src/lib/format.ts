@@ -130,12 +130,12 @@ export function formatBillNo(dateStr: string, deviceCode: string, sequence: numb
 }
 
 /**
- * Compute bill totals with round-to-two decimals
+ * Compute bill totals with percentage discount
  */
 export function calculateBillTotals(
   items: Array<{ qty: number; unit_price: number }>,
-  discountAmount: number = 0
-): { subtotal: number; discount: number; total: number } {
+  discountPercent: number = 0
+): { subtotal: number; discountPercent: number; discount: number; total: number } {
   const rawSubtotal = items.reduce((acc, item) => {
     const qty = Math.max(0, item.qty || 0);
     const price = Math.max(0, item.unit_price || 0);
@@ -143,12 +143,14 @@ export function calculateBillTotals(
   }, 0);
 
   const subtotal = Math.round(rawSubtotal * 100) / 100;
-  const validDiscount = Math.max(0, Math.min(subtotal, Math.round((discountAmount || 0) * 100) / 100));
-  const total = Math.max(0, Math.round((subtotal - validDiscount) * 100) / 100);
+  const validPercent = Math.max(0, Math.min(100, Math.round((discountPercent || 0) * 100) / 100));
+  const discount = Math.round(((subtotal * validPercent) / 100) * 100) / 100;
+  const total = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
 
   return {
     subtotal,
-    discount: validDiscount,
+    discountPercent: validPercent,
+    discount,
     total,
   };
 }

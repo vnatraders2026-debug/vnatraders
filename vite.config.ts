@@ -15,9 +15,9 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon.svg', 'robots.txt'],
       manifest: {
-        name: 'Crackers Billing',
-        short_name: 'Billing',
-        description: 'Offline-First Retail Crackers Billing System',
+        name: 'VNA Crackers - Billing System',
+        short_name: 'VNA Crackers',
+        description: 'VNA Crackers - Offline-First Retail Point of Sale System',
         theme_color: '#C2410C',
         background_color: '#F7F7F5',
         display: 'standalone',

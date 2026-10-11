@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Profile, UserRole } from '@/types';
 import { supabase, isConfigured } from '@/lib/supabase';
-import { db } from '@/db';
+import { db, initLocalDatabase } from '@/db';
 
 interface AuthContextType {
   user: Profile | null;
@@ -122,24 +122,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const findLocalProfile = async (emailToFind: string) => {
+    let allProfiles = await db.profiles.toArray();
+    if (allProfiles.length === 0) {
+      await initLocalDatabase();
+      allProfiles = await db.profiles.toArray();
+    }
+    const clean = emailToFind.trim().toLowerCase();
+    return allProfiles.find(
+      (p) =>
+        (p.email && p.email.toLowerCase() === clean) ||
+        (clean === 'admin' && p.role === 'admin') ||
+        (clean === 'staff' && p.role === 'staff')
+    );
+  };
+
   const login = async (email: string, password: string): Promise<{ error?: string }> => {
     const trimmedEmail = email.trim().toLowerCase();
 
-    // Fresh login requires internet connection per rules
-    if (!navigator.onLine) {
-      // Check if user already exists in local Dexie for offline emergency access
-      const localProfile = await db.profiles.where('email').equalsIgnoreCase(trimmedEmail).first();
-      if (localProfile && localProfile.is_active) {
-        setUser(localProfile);
-        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(localProfile));
-        return {};
-      }
-      return { error: 'Network is offline. Fresh login requires an active internet connection.' };
-    }
-
-    if (!isConfigured) {
-      // Standalone demo mode credentials check
-      const localProfile = await db.profiles.where('email').equalsIgnoreCase(trimmedEmail).first();
+    // In offline demo mode or when Supabase is not configured
+    if (!isConfigured || !navigator.onLine) {
+      const localProfile = await findLocalProfile(trimmedEmail);
       if (localProfile) {
         if (!localProfile.is_active) {
           return { error: 'This user account is deactivated. Contact an administrator.' };
@@ -148,7 +151,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(localProfile));
         return {};
       }
-      return { error: 'Invalid email or password' };
+      return {
+        error:
+          'Account not found. Use "admin@crackers.local" or "staff@crackers.local" (or click the quick demo buttons below).',
+      };
     }
 
     try {
