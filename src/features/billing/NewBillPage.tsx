@@ -529,6 +529,7 @@ export const NewBillPage: React.FC = () => {
           items={savedReceiptData.items}
           settings={shopSettings}
           currentUser={user}
+          autoPrint={shopSettings.auto_print ?? true}
           onNewBill={() => {
             setSavedReceiptData(null);
             clearCart();

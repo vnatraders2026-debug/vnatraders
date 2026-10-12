@@ -56,11 +56,11 @@
   }
 }
 
-/* Print Stylesheet for 80mm Thermal Receipt Paper and A4 */
+/* Print Stylesheet for Thermal Receipt Paper (80mm / 58mm) and A4 */
 @media print {
   @page {
     margin: 0;
-    size: 80mm auto;
+    size: auto;
   }
 
   html, body {
@@ -68,22 +68,74 @@
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
-  header, nav, aside, button, .print\:hidden {
+  /* Completely eliminate the entire application web UI during printing */
+  #root,
+  header,
+  nav,
+  aside,
+  main,
+  button,
+  .print\:hidden {
     display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Reset modal overlays so only the receipt content remains */
+  .print-modal-overlay {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow: visible !important;
   }
 
   #receipt-print-area {
     display: block !important;
-    width: 76mm !important;
-    margin: 0 auto !important;
-    padding: 2mm !important;
-    font-family: 'Courier New', Courier, monospace !important;
-    font-size: 11px !important;
-    line-height: 1.25 !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important; /* Stretch to full 80mm paper width */
+    margin: 0 !important;
+    padding: 1mm 1mm !important;
+    box-sizing: border-box !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Courier New", Courier, monospace !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    line-height: 1.35 !important;
     border: none !important;
+    border-radius: 0 !important;
+    outline: none !important;
+    box-shadow: none !important;
     background: #FFFFFF !important;
     color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Force all receipt text, headers, and dashed dividers to be pitch-black for thermal printer clarity */
+  #receipt-print-area,
+  #receipt-print-area * {
+    color: #000000 !important;
+    border-color: #000000 !important;
+    text-shadow: none !important;
+    filter: none !important;
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* For 58mm compact thermal rolls */
+  #receipt-print-area.receipt-58mm {
+    max-width: 100% !important;
+    font-size: 10.5px !important;
+    padding: 1mm 1mm !important;
   }
 }

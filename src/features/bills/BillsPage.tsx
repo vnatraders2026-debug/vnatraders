@@ -15,7 +15,8 @@ import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { Search, Eye, Edit3, Printer, History, MessageSquare } from 'lucide-react';
+import { Search, Eye, Edit3, Printer, History, MessageSquare, RefreshCw } from 'lucide-react';
+import { syncService } from '@/sync/syncService';
 
 export const BillsPage: React.FC = () => {
   const { user } = useAuth();
@@ -38,14 +39,15 @@ export const BillsPage: React.FC = () => {
   const [whatsAppBill, setWhatsAppBill] = useState<Bill | null>(null);
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTimeMs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const allBills = await db.bills.orderBy('created_at').reverse().toArray();
       const allProfiles = await db.profiles.toArray();
@@ -58,12 +60,47 @@ export const BillsPage: React.FC = () => {
       const settings = await getShopSettings();
       setShopSettings(settings);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+    }
+  };
+
+  const handleSyncCloud = async () => {
+    setIsSyncing(true);
+    try {
+      await syncService.triggerSync();
+      await loadData(true);
+    } catch (err) {
+      console.warn('Manual sync notice:', err);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   useEffect(() => {
     loadData();
+
+    // Pull latest bills from cloud when BillsPage opens
+    if (navigator.onLine) {
+      syncService.triggerSync().catch(console.warn);
+    }
+
+    const handleSyncEvent = () => {
+      loadData(true);
+    };
+
+    window.addEventListener('bills-synced', handleSyncEvent);
+    window.addEventListener('supabase-data-refreshed', handleSyncEvent);
+
+    // Poll every 8 seconds to automatically show bills created on other devices
+    const pollTimer = setInterval(() => {
+      loadData(true);
+    }, 8000);
+
+    return () => {
+      window.removeEventListener('bills-synced', handleSyncEvent);
+      window.removeEventListener('supabase-data-refreshed', handleSyncEvent);
+      clearInterval(pollTimer);
+    };
   }, []);
 
   // Filtered bills
@@ -138,41 +175,55 @@ export const BillsPage: React.FC = () => {
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-2 w-full md:w-auto">
-          <Select
-            value={filterPaymentMode}
-            onChange={(e) => setFilterPaymentMode(e.target.value)}
-            className="text-xs min-h-[40px]"
-          >
-            <option value="all">All Modes</option>
-            <option value="cash">Cash</option>
-            <option value="upi">UPI</option>
-            <option value="card">Card</option>
-          </Select>
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="grid grid-cols-3 gap-2 flex-1 md:w-auto">
+            <Select
+              value={filterPaymentMode}
+              onChange={(e) => setFilterPaymentMode(e.target.value)}
+              className="text-xs min-h-[40px]"
+            >
+              <option value="all">All Modes</option>
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+            </Select>
 
-          <Select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            className="text-xs min-h-[40px]"
-          >
-            <option value="all">All Dates</option>
-            <option value="today">Today</option>
-            <option value="7days">Past 7 Days</option>
-            <option value="30days">Past 30 Days</option>
-          </Select>
+            <Select
+              value={dateRange}
+              onChange={(e) => setDateRange(e.target.value)}
+              className="text-xs min-h-[40px]"
+            >
+              <option value="all">All Dates</option>
+              <option value="today">Today</option>
+              <option value="7days">Past 7 Days</option>
+              <option value="30days">Past 30 Days</option>
+            </Select>
 
-          <Select
-            value={filterStaff}
-            onChange={(e) => setFilterStaff(e.target.value)}
-            className="text-xs min-h-[40px]"
+            <Select
+              value={filterStaff}
+              onChange={(e) => setFilterStaff(e.target.value)}
+              className="text-xs min-h-[40px]"
+            >
+              <option value="all">All Staff</option>
+              {Array.from(profiles.values()).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleSyncCloud}
+            disabled={isSyncing}
+            className="min-h-[40px] px-3 text-xs text-accent border-accent/40 hover:bg-accent-light shrink-0"
+            title="Sync latest bills from cloud across all devices"
           >
-            <option value="all">All Staff</option>
-            {Array.from(profiles.values()).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.full_name}
-              </option>
-            ))}
-          </Select>
+            <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">{isSyncing ? 'Syncing...' : 'Sync Cloud'}</span>
+          </Button>
         </div>
       </div>
 

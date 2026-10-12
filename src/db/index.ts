@@ -23,6 +23,8 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   receipt_footer: 'Thank you for choosing VNA Crackers! Wishing you a bright and safe celebration.',
   device_code: 'A',
   paper_size: '80mm',
+  auto_print: true,
+  print_margin_offset: 0,
 };
 
 export const DEFAULT_BRANDS: Brand[] = [

@@ -200,10 +200,32 @@ export const SettingsPage: React.FC = () => {
                 value={settings.paper_size}
                 onChange={(e) => setSettings({ ...settings, paper_size: e.target.value as any })}
               >
-                <option value="80mm">80 mm Thermal POS Roll</option>
+                <option value="80mm">80 mm (3-inch) Thermal POS Roll (Standard)</option>
+                <option value="58mm">58 mm (2-inch) Compact Thermal Roll</option>
                 <option value="a4">Standard A4 Sheet</option>
               </Select>
             </div>
+          </div>
+
+          {/* Auto-Print on Save Toggle */}
+          <div className="pt-2 border-t border-border flex items-center justify-between">
+            <div>
+              <label className="text-xs font-semibold text-text block cursor-pointer">
+                Auto-Print Receipt on Saving Bill
+              </label>
+              <p className="text-[11px] text-text-muted mt-0.5">
+                Automatically triggers printing immediately when a bill is saved (or with Ctrl+Enter).
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.auto_print ?? true}
+                onChange={(e) => setSettings({ ...settings, auto_print: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+            </label>
           </div>
         </div>
 

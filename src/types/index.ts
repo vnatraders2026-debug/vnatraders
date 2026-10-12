@@ -98,7 +98,9 @@ export interface ShopSettings {
   gst_no: string;
   receipt_footer: string;
   device_code: string;
-  paper_size: '80mm' | 'a4';
+  paper_size: '80mm' | '58mm' | 'a4';
+  auto_print?: boolean;
+  print_margin_offset?: number;
 }
 
 export interface ActivityLog {

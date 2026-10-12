@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Bill, BillItem, ShopSettings, Profile } from '@/types';
 import { checkBillEditPermission, formatRemainingTime } from '@/lib/permissions';
 import { Printer, PlusCircle, Edit3, X, MessageSquare } from 'lucide-react';
@@ -11,6 +12,7 @@ interface ReceiptModalProps {
   items: BillItem[];
   settings: ShopSettings;
   currentUser: Profile;
+  autoPrint?: boolean;
   onNewBill: () => void;
   onEditBill: () => void;
   onClose: () => void;
@@ -21,6 +23,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   items,
   settings,
   currentUser,
+  autoPrint = false,
   onNewBill,
   onEditBill,
   onClose,
@@ -35,20 +38,30 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  // Automatic thermal print on save
+  useEffect(() => {
+    if (autoPrint) {
+      const printTimer = setTimeout(() => {
+        window.print();
+      }, 350);
+      return () => clearTimeout(printTimer);
+    }
+  }, [autoPrint]);
+
   const editPermission = checkBillEditPermission(bill, currentUser, currentTimeMs);
 
   const handlePrint = () => {
     window.print();
   };
 
-  return (
+  return createPortal(
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 print-modal-overlay print:static print:p-0 print:m-0 print:block">
         {/* Backdrop */}
-        <div className="fixed inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
+        <div className="fixed inset-0 bg-black/50 print:hidden" onClick={onClose} aria-hidden="true" />
 
         {/* Main Container */}
-        <div className="relative w-full max-w-lg bg-surface border border-border rounded shadow-subtle p-6 z-10 max-h-[95dvh] flex flex-col">
+        <div className="relative w-full max-w-lg bg-surface border border-border rounded shadow-subtle p-4 sm:p-6 z-10 max-h-[95dvh] flex flex-col print-modal-overlay print:border-none print:p-0 print:m-0 print:shadow-none print:max-h-none print:bg-transparent">
           {/* Header Action Bar */}
           <div className="flex items-center justify-between pb-3 border-b border-border mb-4 print:hidden">
             <div>
@@ -65,7 +78,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           </div>
 
           {/* Printable Receipt Paper Container */}
-          <div className="flex-1 overflow-y-auto p-2 bg-background border border-border rounded flex justify-center">
+          <div className="flex-1 overflow-y-auto p-2 bg-background border border-border rounded flex justify-center print:border-none print:p-0 print:m-0 print:overflow-visible print:bg-transparent">
             <ReceiptCard
               bill={bill}
               items={items}
@@ -135,6 +148,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           settings={settings}
         />
       )}
-    </>
+    </>,
+    document.body
   );
 };

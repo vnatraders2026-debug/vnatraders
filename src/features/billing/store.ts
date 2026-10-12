@@ -304,12 +304,13 @@ export const useCartStore = create<CartState>((set, get) => ({
     // Reset cart
     get().clearCart();
 
-    // Trigger sync in background without waiting
-    syncService.updatePendingCount().then(() => {
-      if (navigator.onLine) {
-        syncService.triggerSync();
-      }
-    });
+    // Trigger sync immediately in background
+    if (navigator.onLine) {
+      syncService.triggerSync().catch((err) => {
+        console.warn('Immediate bill sync notice:', err);
+      });
+    }
+    syncService.updatePendingCount().catch(console.warn);
 
     return { bill: billRecord, items: billItemsRecords };
   },
