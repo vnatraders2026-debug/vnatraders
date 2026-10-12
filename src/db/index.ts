@@ -14,12 +14,13 @@ import {
 } from '@/types';
 import { getISTYYMMDD, formatBillNo } from '@/lib/format';
 import { generateUUID } from '@/lib/uuid';
+import { supabase, isConfigured } from '@/lib/supabase';
 
 export const DEFAULT_SETTINGS: ShopSettings = {
-  shop_name: 'VNA Crackers',
-  shop_address: '142 Kakkan Road, Sivakasi, Tamil Nadu - 626123',
+  shop_name: 'VNA TRADERS',
+  shop_address: 'Jeermangalam, Hosur, Tamil Nadu - 635109',
   shop_phone: '+91 94431 23456',
-  gst_no: '33VNACK0000A1Z5',
+  gst_no: '33ACSPV5299F1Z5',
   receipt_footer: 'Thank you for choosing VNA Crackers! Wishing you a bright and safe celebration.',
   device_code: 'A',
   paper_size: '80mm',
@@ -104,7 +105,12 @@ export const db = new CrackersBillingDB();
 export async function initLocalDatabase(): Promise<void> {
   // Check settings
   const currentSettings = await db.settings.get('shop_settings');
-  if (!currentSettings || currentSettings.value?.shop_name === 'Sri Murugan Crackers') {
+  if (
+    !currentSettings ||
+    currentSettings.value?.shop_name === 'Sri Murugan Crackers' ||
+    currentSettings.value?.shop_address?.includes('Sivakasi') ||
+    currentSettings.value?.gst_no === '33VNACK0000A1Z5'
+  ) {
     await db.settings.put({ key: 'shop_settings', value: DEFAULT_SETTINGS });
   }
 
@@ -191,6 +197,29 @@ export async function saveShopSettings(settings: Partial<ShopSettings>): Promise
   const current = await getShopSettings();
   const updated = { ...current, ...settings };
   await db.settings.put({ key: 'shop_settings', value: updated });
+
+  if (isConfigured && navigator.onLine) {
+    try {
+      await supabase.from('shop_settings').upsert(
+        {
+          key: 'shop_settings',
+          shop_name: updated.shop_name,
+          shop_address: updated.shop_address,
+          shop_phone: updated.shop_phone,
+          gst_no: updated.gst_no,
+          receipt_footer: updated.receipt_footer,
+          paper_size: updated.paper_size,
+          auto_print: updated.auto_print ?? true,
+          device_code: updated.device_code,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'key' }
+      );
+    } catch (err) {
+      console.warn('Could not sync shop settings to Supabase:', err);
+    }
+  }
+
   return updated;
 }
 

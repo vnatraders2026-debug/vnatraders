@@ -14,6 +14,7 @@ interface ReceiptModalProps {
   items: BillItem[];
   settings: ShopSettings;
   currentUser: Profile;
+  billedBy?: string;
   autoPrint?: boolean;
   onNewBill: () => void;
   onEditBill: () => void;
@@ -25,6 +26,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   items,
   settings,
   currentUser,
+  billedBy,
   autoPrint = false,
   onNewBill,
   onEditBill,
@@ -49,11 +51,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  const billedUserName = currentUser?.full_name || currentUser?.email || 'Admin';
+
   const handlePrint = async () => {
     if (directPrinterService.isConnected()) {
       setIsDirectPrinting(true);
       try {
-        const res = await directPrinterService.printBillDirect(bill, items, settings);
+        const res = await directPrinterService.printBillDirect(bill, items, settings, billedUserName);
         toast(`Directly printed to ${res.printerName || 'Thermal POS'}!`, 'success');
         return;
       } catch (err: any) {

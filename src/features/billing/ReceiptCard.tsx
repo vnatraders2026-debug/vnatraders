@@ -6,6 +6,7 @@ interface ReceiptCardProps {
   bill: Bill;
   items: BillItem[];
   settings: ShopSettings;
+  billedBy?: string;
   id?: string;
   className?: string;
 }
@@ -14,6 +15,7 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
   bill,
   items,
   settings,
+  billedBy,
   id = 'receipt-print-area',
   className = '',
 }) => {
@@ -36,7 +38,7 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
         boxShadow: 'none',
       }}
     >
-      {/* Shop Header */}
+      {/* Shop Header (Center Aligned) */}
       <div className="text-center space-y-0.5">
         <h3 className="text-sm font-black uppercase tracking-wider text-black">{settings.shop_name}</h3>
         <p className="text-[11px] font-medium text-black">{settings.shop_address}</p>
@@ -48,18 +50,17 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
 
       <div className="border-t-2 border-dashed border-black my-1.5" />
 
-      {/* Bill Meta */}
-      <div className="flex justify-between text-[11px] font-bold text-black">
-        <span>Bill: <span className="font-mono text-black font-black">{bill.bill_no}</span></span>
-        <span>{formatISTDate(bill.created_at)}</span>
+      {/* Bill Meta (Center Aligned) */}
+      <div className="text-center text-[11px] font-bold text-black space-y-0.5">
+        <div>Bill: <span className="font-mono text-black font-black">{bill.bill_no}</span></div>
+        <div className="text-black font-semibold text-[10px]">{formatISTDate(bill.created_at)}</div>
+        {(bill.customer_name || bill.customer_phone) && (
+          <div className="text-[10px] font-medium text-black pt-0.5">
+            {bill.customer_name && <span>Customer: <strong className="text-black font-bold">{bill.customer_name}</strong> </span>}
+            {bill.customer_phone && <span className="font-semibold text-black">({bill.customer_phone})</span>}
+          </div>
+        )}
       </div>
-
-      {(bill.customer_name || bill.customer_phone) && (
-        <div className="text-[11px] font-medium text-black">
-          {bill.customer_name && <span>Customer: <strong className="text-black font-bold">{bill.customer_name}</strong> </span>}
-          {bill.customer_phone && <span className="font-semibold text-black">({bill.customer_phone})</span>}
-        </div>
-      )}
 
       <div className="border-t-2 border-dashed border-black my-1.5" />
 
@@ -68,23 +69,20 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
         <thead>
           <tr className="border-b-2 border-black font-bold">
             <th className="py-1 text-black font-bold">Item</th>
-            <th className="py-1 text-right text-black font-bold">Qty</th>
-            <th className="py-1 text-right text-black font-bold">Rate</th>
-            <th className="py-1 text-right text-black font-bold">Total</th>
+            <th className="py-1 text-right text-black font-bold whitespace-nowrap px-1">Qty</th>
+            <th className="py-1 text-right text-black font-bold whitespace-nowrap px-1">Rate</th>
+            <th className="py-1 text-right text-black font-bold whitespace-nowrap pl-1">Total</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-black/30">
           {items.map((item, idx) => (
             <tr key={idx} className="font-semibold">
-              <td className="py-1 pr-1 max-w-[130px] font-sans text-xs">
-                <div className="font-bold text-black leading-tight">{item.product_name}</div>
-                <div className="text-[9px] text-black font-mono font-bold tracking-wider">
-                  [{item.brand || 'General'}]
-                </div>
+              <td className="py-1 pr-1 font-sans text-xs">
+                <span className="font-bold text-black leading-tight">{item.product_name}</span>
               </td>
-              <td className="py-1 text-right tabular-nums text-black font-bold">{item.qty}</td>
-              <td className="py-1 text-right tabular-nums text-black font-bold">{formatNumber(item.unit_price)}</td>
-              <td className="py-1 text-right tabular-nums text-black font-black">
+              <td className="py-1 text-right tabular-nums text-black font-bold whitespace-nowrap px-1">{item.qty}</td>
+              <td className="py-1 text-right tabular-nums text-black font-bold whitespace-nowrap px-1">{formatNumber(item.unit_price)}</td>
+              <td className="py-1 text-right tabular-nums text-black font-black whitespace-nowrap pl-1">
                 {formatNumber(item.line_total)}
               </td>
             </tr>
@@ -128,20 +126,25 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
           </div>
         ) : null}
 
-        <div className="flex justify-between font-black text-sm pt-1 border-t-2 border-black text-black">
-          <span>Grand Total:</span>
-          <span className="tabular-nums font-mono text-black">{formatINR(bill.total)}</span>
+        {/* Grand Total (Center Aligned, Bold & Prominent) */}
+        <div className="text-center font-black text-sm py-1.5 border-t-2 border-b-2 border-black text-black">
+          <span>GRAND TOTAL: {formatINR(bill.total)}</span>
         </div>
 
-        <div className="flex justify-between text-[11px] font-semibold text-black pt-0.5">
-          <span>Payment:</span>
-          <span className="uppercase font-bold text-black">{bill.payment_mode}</span>
+        {/* Payment Mode & Billed By username (Center Aligned at the last) */}
+        <div className="text-center text-[11px] font-bold text-black pt-1 space-y-0.5">
+          <p>Payment Mode: <span className="uppercase font-black text-black">{bill.payment_mode}</span></p>
+          {billedBy && (
+            <p className="text-black font-semibold">
+              Billed By: <span className="font-bold text-black">{billedBy}</span>
+            </p>
+          )}
         </div>
       </div>
 
       <div className="border-t-2 border-dashed border-black my-1.5" />
 
-      {/* Footer message */}
+      {/* Footer message (Center Aligned) */}
       <div className="text-center text-[10px] font-semibold text-black">
         <p>{settings.receipt_footer}</p>
       </div>

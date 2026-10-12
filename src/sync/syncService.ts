@@ -355,6 +355,23 @@ class SyncService {
     if (profiles && profiles.length > 0) {
       await db.profiles.bulkPut(profiles as Profile[]);
     }
+
+    // 4. Pull Shop Settings (if migration 008 table exists)
+    try {
+      const { data: remoteSettings } = await supabase
+        .from('shop_settings')
+        .select('*')
+        .eq('key', 'shop_settings')
+        .maybeSingle();
+
+      if (remoteSettings) {
+        const local = await db.settings.get('shop_settings');
+        const merged = { ...local?.value, ...remoteSettings };
+        await db.settings.put({ key: 'shop_settings', value: merged });
+      }
+    } catch {
+      // Table might not exist yet if migration 008 has not been applied
+    }
   }
 
   /**
