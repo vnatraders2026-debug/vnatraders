@@ -348,20 +348,45 @@ class SyncService {
       await db.sync_meta.put({ table_name: 'products', last_synced_at: latestProdDate });
     }
 
-    // 2. Pull Bills from Cloud (latest 200 bills to ensure seamless multi-device sync)
+    // 2. Pull Bills from Cloud (reconcile deleted bills across devices)
     const { data: serverBills, error: billErr } = await supabase
       .from('bills')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(500);
 
-    if (!billErr && serverBills && serverBills.length > 0) {
-      const mapped = serverBills.map((b: any) => ({ ...b, sync_status: 'synced' as const }));
-      await db.bills.bulkPut(mapped);
+    if (!billErr && serverBills !== null) {
+      const serverBillIds = new Set((serverBills || []).map((b: any) => b.id));
 
-      // Fetch items for pulled bills
-      const billIds = serverBills.map((b) => b.id);
-      if (billIds.length > 0) {
+      // Remove any local bills that were deleted on Supabase
+      const allLocalBills = await db.bills.toArray();
+      const pendingOutbox = await db.outbox
+        .where('entity')
+        .equals('bills')
+        .and((o) => o.status === 'pending' || o.status === 'syncing')
+        .toArray();
+      const pendingOutboxBillIds = new Set(pendingOutbox.map((o) => o.payload?.id));
+
+      const deletedLocalIds = allLocalBills
+        .filter((b) => !serverBillIds.has(b.id) && !pendingOutboxBillIds.has(b.id))
+        .map((b) => b.id);
+
+      if (deletedLocalIds.length > 0) {
+        await db.bills.bulkDelete(deletedLocalIds);
+        await db.bill_items.where('bill_id').anyOf(deletedLocalIds).delete();
+      }
+      if (serverBills.length === 0 && pendingOutboxBillIds.size === 0) {
+        await db.bills.clear();
+        await db.bill_items.clear();
+      }
+
+      // If server has bills, put them in local IndexedDB
+      if (serverBills && serverBills.length > 0) {
+        const mapped = serverBills.map((b: any) => ({ ...b, sync_status: 'synced' as const }));
+        await db.bills.bulkPut(mapped);
+
+        // Fetch items for pulled bills
+        const billIds = serverBills.map((b: any) => b.id);
         const { data: serverItems } = await supabase
           .from('bill_items')
           .select('*')
@@ -435,10 +460,14 @@ class SyncService {
     this.notify();
 
     try {
-      // 1. Clear cached local products & sync metadata
-      await db.transaction('rw', [db.products, db.sync_meta], async () => {
+      // 1. Clear cached local products, sync metadata, bills, and bill_items
+      await db.transaction('rw', [db.products, db.sync_meta, db.bills, db.bill_items, db.outbox], async () => {
         await db.products.clear();
         await db.sync_meta.clear();
+        await db.bills.clear();
+        await db.bill_items.clear();
+        await db.outbox.where('entity').equals('bills').delete();
+        await db.outbox.where('entity').equals('bill_items').delete();
       });
 
       // 2. Fetch fresh products from Supabase
@@ -474,16 +503,18 @@ class SyncService {
       }
 
       // 5. Fetch fresh bills from Supabase
+      let billCount = 0;
       try {
-        const { data: serverBills } = await supabase
+        const { data: serverBills, error: billFetchErr } = await supabase
           .from('bills')
           .select('*')
           .order('created_at', { ascending: false })
-          .limit(200);
+          .limit(500);
 
-        if (serverBills && serverBills.length > 0) {
+        if (!billFetchErr && serverBills && serverBills.length > 0) {
           const mapped = serverBills.map((b: any) => ({ ...b, sync_status: 'synced' as const }));
           await db.bills.bulkPut(mapped);
+          billCount = serverBills.length;
 
           const billIds = serverBills.map((b) => b.id);
           const { data: serverItems } = await supabase.from('bill_items').select('*').in('bill_id', billIds);
@@ -493,6 +524,10 @@ class SyncService {
         }
       } catch (billsErr) {
         console.warn('Bills fresh pull warning:', billsErr);
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('bills-synced'));
       }
 
       // 6. Fetch profiles from Supabase
@@ -514,7 +549,7 @@ class SyncService {
       this.currentStatus.lastError = undefined;
       return {
         success: true,
-        message: `Successfully cleared cache and pulled fresh data from Supabase!`,
+        message: `Successfully cleared cache and pulled fresh data from Supabase! (Products: ${productCount}, Bills: ${billCount})`,
         count: productCount,
       };
     } catch (err: any) {

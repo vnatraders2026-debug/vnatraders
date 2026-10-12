@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/db';
 import { TargetProgress } from '@/types';
@@ -36,6 +36,18 @@ export const DashboardPage: React.FC = () => {
   const [dateRange, setDateRange] = useState<'today' | '7days' | 'month' | 'fy'>('month');
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
   const [newTargetAmount, setNewTargetAmount] = useState('500000');
+
+  useEffect(() => {
+    const handleSync = () => {
+      queryClient.invalidateQueries({ queryKey: ['admin_dashboard_metrics'] });
+    };
+    window.addEventListener('bills-synced', handleSync);
+    window.addEventListener('supabase-data-refreshed', handleSync);
+    return () => {
+      window.removeEventListener('bills-synced', handleSync);
+      window.removeEventListener('supabase-data-refreshed', handleSync);
+    };
+  }, [queryClient]);
 
   // Fetch all bills and items from Dexie (instant and offline-ready)
   const { data, isLoading } = useQuery({

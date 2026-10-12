@@ -263,29 +263,25 @@ items_raw = """
 25965	S Robin 5 In 1 Classic Matches	280.00
 """
 
-def categorize(name):
-    lower = name.lower()
-    if lower.startswith("g "):
-        return "Gift Boxes"
-    if "sparkler" in lower or lower.startswith("s ") and "sparkler" in lower:
-        return "Sparklers"
-    if "matches" in lower:
-        return "Kids Special Crackers"
-    if "twinkling star" in lower:
-        return "Twinkling Stars"
-    if "chakkar" in lower or "chorsha" in lower or "chagar" in lower or "wheel" in lower or "disco" in lower or "spin" in lower:
-        return "Ground Chakkars"
-    if "flower pot" in lower or "pots" in lower:
-        return "Flower Pots"
-    if "rocket" in lower:
-        return "Rockets"
-    if "bomb" in lower or "lar " in lower or "sound" in lower or "crackers" in lower or "bijili" in lower or "gaint" in lower or "dlx" in lower or "watts" in lower or "lakshmi" in lower or "kuberra" in lower or "jallikattu" in lower or "sparrow" in lower or "chit put" in lower:
-        return "Bombs & Sound Crackers"
-    if "fountain" in lower or "foundain" in lower or "foundin" in lower or "cone" in lower or "pinjore" in lower or "shower" in lower:
-        return "Fountains & Cones"
-    if "shot" in lower or "comet" in lower:
-        return "Single & Multi Shots"
-    return "Fancy Novelties"
+import re
+
+category_map = {
+    'C': 'Crackers',
+    'F': 'Fancy',
+    'G': 'Gift Box',
+    'S': 'Sparklers',
+    'U': 'Fancy'
+}
+
+def parse_category_and_name(raw_name):
+    raw = raw_name.strip()
+    m = re.match(r'^([CFGSUcfgsu])\s+(.+)$', raw)
+    if m:
+        letter = m.group(1).upper()
+        clean_name = m.group(2).strip()
+        category = category_map.get(letter, 'Crackers')
+        return category, clean_name
+    return 'Crackers', raw
 
 lines = [l.strip() for l in items_raw.strip().split("\n") if l.strip()]
 print(f"Total lines: {len(lines)}")
@@ -302,30 +298,42 @@ for line in lines:
     if code in codes:
         duplicates.append((code, name))
     codes.add(code)
-    cat = categorize(name)
+    cat, clean_name = parse_category_and_name(name)
     unit = 'box'
-    if 'shot' in name.lower() or 'comet' in name.lower():
+    if 'shot' in clean_name.lower() or 'comet' in clean_name.lower():
         unit = 'piece'
-    parsed.append((code, name, cat, unit, rate))
+    parsed.append((code, clean_name, cat, unit, rate))
 
 print("Duplicates:", duplicates)
 print("Unique count:", len(codes))
 
 # Generate SQL
 sql_lines = []
+sql_lines.append("-- Migration 007: Insert General Brand Products (VNA Traders Price List)")
+sql_lines.append(f"-- Total products: {len(parsed)}")
+sql_lines.append("")
 sql_lines.append("-- 1. Ensure 'General' brand exists")
 sql_lines.append("INSERT INTO public.brands (name, is_active)")
 sql_lines.append("VALUES ('General', true)")
 sql_lines.append("ON CONFLICT (name) DO NOTHING;\n")
 
-sql_lines.append("-- 2. Insert Products under brand 'General'")
+sql_lines.append("-- 2. Ensure Categories exist")
+sql_lines.append("INSERT INTO public.categories (id, name, is_active)")
+sql_lines.append("VALUES")
+sql_lines.append("  ('cat-crackers', 'Crackers', true),")
+sql_lines.append("  ('cat-fancy', 'Fancy', true),")
+sql_lines.append("  ('cat-gift-box', 'Gift Box', true),")
+sql_lines.append("  ('cat-sparklers', 'Sparklers', true)")
+sql_lines.append("ON CONFLICT (name) DO NOTHING;\n")
+
+sql_lines.append("-- 3. Insert Products under brand 'General'")
 sql_lines.append("INSERT INTO public.products (code, name, category, unit, price, stock, is_active, brand)")
 sql_lines.append("VALUES")
 
 val_rows = []
 for code, name, cat, unit, rate in parsed:
-    clean_name = name.replace("'", "''")
-    val_rows.append(f"  ('{code}', '{clean_name}', '{cat}', '{unit}', {rate:.2f}, 100, true, 'General')")
+    normalized_name = name.replace("''", '"').replace("'", "''")
+    val_rows.append(f"  ('{code}', '{normalized_name}', '{cat}', '{unit}', {rate:.2f}, 100, true, 'General')")
 
 sql_lines.append(",\n".join(val_rows))
 sql_lines.append("""ON CONFLICT (code) DO UPDATE SET
@@ -341,3 +349,4 @@ with open("supabase/migrations/007_insert_general_products.sql", "w", encoding="
     f.write("\n".join(sql_lines))
 
 print("Saved to supabase/migrations/007_insert_general_products.sql")
+

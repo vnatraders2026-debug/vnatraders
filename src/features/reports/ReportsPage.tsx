@@ -44,6 +44,14 @@ export const ReportsPage: React.FC = () => {
       }
     }
     loadData();
+
+    const handleSync = () => loadData();
+    window.addEventListener('bills-synced', handleSync);
+    window.addEventListener('supabase-data-refreshed', handleSync);
+    return () => {
+      window.removeEventListener('bills-synced', handleSync);
+      window.removeEventListener('supabase-data-refreshed', handleSync);
+    };
   }, []);
 
   // Filter bills within selected date range (inclusive)

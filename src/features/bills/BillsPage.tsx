@@ -67,7 +67,7 @@ export const BillsPage: React.FC = () => {
   const handleSyncCloud = async () => {
     setIsSyncing(true);
     try {
-      await syncService.triggerSync();
+      await syncService.forceFreshPullFromSupabase();
       await loadData(true);
     } catch (err) {
       console.warn('Manual sync notice:', err);
