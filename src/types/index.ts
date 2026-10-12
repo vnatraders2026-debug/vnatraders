@@ -9,11 +9,28 @@ export interface Profile {
   email?: string;
 }
 
+export interface Brand {
+  id: string;
+  name: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Product {
   id: string;
   code: string;
   name: string;
   category: string;
+  brand?: string;
   unit: string;
   price: number;
   stock: number;
@@ -39,6 +56,7 @@ export interface Bill {
   edited_by?: string | null;
   updated_at: string;
   sync_status?: 'synced' | 'pending';
+  brand_discounts?: Record<string, number>; // Mapping brand name -> discount percentage
 }
 
 export interface BillItem {
@@ -46,6 +64,7 @@ export interface BillItem {
   bill_id: string;
   product_id?: string | null;
   product_name: string;
+  brand?: string;
   qty: number;
   unit_price: number;
   line_total: number;
@@ -53,7 +72,7 @@ export interface BillItem {
 
 export interface OutboxItem {
   id: string;
-  entity: 'bills' | 'bill_items' | 'products' | 'monthly_targets';
+  entity: 'bills' | 'bill_items' | 'products' | 'brands' | 'categories' | 'monthly_targets';
   op: 'insert' | 'update' | 'upsert' | 'delete';
   payload: any;
   status: 'pending' | 'syncing' | 'done' | 'failed';

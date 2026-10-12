@@ -9,9 +9,7 @@ import {
   EyeOff,
   ShieldCheck,
   Zap,
-  WifiOff,
   Printer,
-  ArrowRight,
   UserCheck,
 } from 'lucide-react';
 
@@ -26,33 +24,32 @@ export const LoginPage: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleLoginSubmit = async (e?: React.FormEvent, directEmail?: string, directPassword?: string) => {
-    if (e) e.preventDefault();
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMessage('');
 
-    const targetEmail = directEmail || email;
-    const targetPassword = directPassword || password;
-
-    if (!targetEmail.trim() || !targetPassword) {
-      setErrorMessage('Please enter email and password');
+    if (!email.trim() || !password) {
+      setErrorMessage('Please enter both email address and password');
       return;
     }
 
     setLoading(true);
-    const result = await login(targetEmail, targetPassword);
+    const result = await login(email, password);
     setLoading(false);
 
     if (result.error) {
       setErrorMessage(result.error);
     } else {
+      // Activate fullscreen mode immediately on login
+      try {
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch (fsErr) {
+        console.warn('Fullscreen entry on login bypassed:', fsErr);
+      }
       navigate('/billing', { replace: true });
     }
-  };
-
-  const handleQuickRoleSelect = (roleEmail: string) => {
-    setEmail(roleEmail);
-    setPassword('demo12345');
-    handleLoginSubmit(undefined, roleEmail, 'demo12345');
   };
 
   return (
@@ -61,78 +58,17 @@ export const LoginPage: React.FC = () => {
         {/* VNA Brand Logo */}
         <VnaLogo size="xl" className="mb-2" />
         <p className="text-xs text-text-muted">
-          Offline-First Retail Point of Sale & Inventory
+          Retail Point of Sale & Billing System
         </p>
       </div>
 
-      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-lg px-4">
+      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md px-4">
         <div className="bg-surface border border-border rounded shadow-subtle p-6 sm:p-8 space-y-6">
-          {/* Quick Account Switcher Header */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
-                Fast Offline Access
-              </span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-success-light text-success">
-                <WifiOff size={10} />
-                <span>IndexedDB Ready</span>
-              </span>
-            </div>
-
-            {/* Quick Login Role Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => handleQuickRoleSelect('admin@crackers.local')}
-                className="group relative flex flex-col p-3 rounded border border-border bg-background text-left transition-colors hover:border-accent hover:bg-surface focus:outline-none focus:ring-2 focus:ring-accent"
-              >
-                <div className="flex items-center justify-between w-full mb-1">
-                  <span className="text-xs font-bold text-text group-hover:text-accent">
-                    Admin Manager
-                  </span>
-                  <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-accent text-white">
-                    ADMIN
-                  </span>
-                </div>
-                <p className="text-[11px] text-text-muted leading-tight">
-                  Full access, analytics, targets, reports & logs
-                </p>
-                <div className="mt-2.5 flex items-center text-[11px] font-semibold text-accent gap-1">
-                  <span>Enter as Admin</span>
-                  <ArrowRight size={12} />
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickRoleSelect('staff@crackers.local')}
-                className="group relative flex flex-col p-3 rounded border border-border bg-background text-left transition-colors hover:border-accent hover:bg-surface focus:outline-none focus:ring-2 focus:ring-accent"
-              >
-                <div className="flex items-center justify-between w-full mb-1">
-                  <span className="text-xs font-bold text-text group-hover:text-accent">
-                    Cashier Staff
-                  </span>
-                  <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-surface border border-border text-text">
-                    STAFF
-                  </span>
-                </div>
-                <p className="text-[11px] text-text-muted leading-tight">
-                  Fast sub-10ms billing, stock catalogue & receipts
-                </p>
-                <div className="mt-2.5 flex items-center text-[11px] font-semibold text-accent gap-1">
-                  <span>Enter as Cashier</span>
-                  <ArrowRight size={12} />
-                </div>
-              </button>
-            </div>
-          </div>
-
-          <div className="relative flex items-center">
-            <div className="flex-grow border-t border-border" />
-            <span className="flex-shrink mx-3 text-xs text-text-muted font-medium uppercase">
-              Or Sign In With Email
-            </span>
-            <div className="flex-grow border-t border-border" />
+          <div className="text-center pb-2 border-b border-border">
+            <h2 className="text-base font-bold text-text">Terminal Login</h2>
+            <p className="text-xs text-text-muted mt-0.5">
+              Enter your credentials to access the billing terminal
+            </p>
           </div>
 
           {/* Error Banner */}
@@ -158,7 +94,7 @@ export const LoginPage: React.FC = () => {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@crackers.local"
+                  placeholder="admin@vnacrackers.com"
                   autoComplete="email"
                   required
                   className="w-full pl-9 pr-3 min-h-[44px] text-base sm:text-sm bg-surface text-text border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition-colors"

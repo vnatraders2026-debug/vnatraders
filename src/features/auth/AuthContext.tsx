@@ -22,27 +22,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     async function restoreSession() {
       try {
-        // 1. Try local persisted profile session first (essential for offline start)
-        const localCached = localStorage.getItem(SESSION_STORAGE_KEY);
-        if (localCached) {
-          try {
-            const parsed = JSON.parse(localCached);
-            // Verify profile is still active in Dexie
-            const dexieProfile = await db.profiles.get(parsed.id);
-            if (dexieProfile && dexieProfile.is_active) {
-              setUser(dexieProfile);
-            } else if (dexieProfile && !dexieProfile.is_active) {
-              localStorage.removeItem(SESSION_STORAGE_KEY);
-              setUser(null);
-            } else {
-              setUser(parsed);
-            }
-          } catch {
-            localStorage.removeItem(SESSION_STORAGE_KEY);
-          }
-        }
-
-        // 2. If online and Supabase is configured, check active Supabase auth session
+        // 1. If online and Supabase is configured, check active Supabase auth session first
         if (isConfigured && navigator.onLine) {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
@@ -52,33 +32,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               .eq('id', session.user.id)
               .single();
 
-            if (profile) {
-              if (!profile.is_active) {
-                await supabase.auth.signOut();
-                localStorage.removeItem(SESSION_STORAGE_KEY);
-                setUser(null);
-              } else {
-                const fullProfile: Profile = {
-                  id: profile.id,
-                  full_name: profile.full_name,
-                  role: profile.role,
-                  is_active: profile.is_active,
-                  email: session.user.email,
-                };
-                setUser(fullProfile);
-                localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(fullProfile));
-                await db.profiles.put(fullProfile);
-              }
+            if (profile && profile.is_active) {
+              const fullProfile: Profile = {
+                id: profile.id,
+                full_name: profile.full_name,
+                role: profile.role,
+                is_active: profile.is_active,
+                email: session.user.email || profile.email,
+              };
+              setUser(fullProfile);
+              localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(fullProfile));
+              await db.profiles.put(fullProfile);
+              return;
+            } else {
+              await supabase.auth.signOut();
+              localStorage.removeItem(SESSION_STORAGE_KEY);
+              setUser(null);
+              return;
             }
-          }
-        } else if (!localCached) {
-          // If no session and local Dexie has demo profile, default to admin in standalone offline mode
-          const defaultAdmin = await db.profiles.where('role').equals('admin').first();
-          if (defaultAdmin) {
-            setUser(defaultAdmin);
-            localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(defaultAdmin));
+          } else {
+            // No active cloud session: remove any stale demo session
+            const localCached = localStorage.getItem(SESSION_STORAGE_KEY);
+            if (localCached) {
+              try {
+                const parsed = JSON.parse(localCached);
+                if (parsed.id?.startsWith('00000000') || parsed.email?.includes('.local')) {
+                  localStorage.removeItem(SESSION_STORAGE_KEY);
+                  setUser(null);
+                  return;
+                }
+              } catch {}
+            }
+            setUser(null);
+            return;
           }
         }
+
+        // 2. Offline fallback when internet is completely unavailable
+        const localCached = localStorage.getItem(SESSION_STORAGE_KEY);
+        if (localCached) {
+          try {
+            const parsed = JSON.parse(localCached);
+            if (!parsed.id?.startsWith('00000000')) {
+              const dexieProfile = await db.profiles.get(parsed.id);
+              if (dexieProfile && dexieProfile.is_active) {
+                setUser(dexieProfile);
+                return;
+              }
+            }
+          } catch {}
+          localStorage.removeItem(SESSION_STORAGE_KEY);
+        }
+        setUser(null);
       } catch (err) {
         console.warn('Session restoration note:', err);
       } finally {
@@ -139,9 +144,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<{ error?: string }> => {
     const trimmedEmail = email.trim().toLowerCase();
+    const isLocalDemoAccount =
+      trimmedEmail.endsWith('.local') ||
+      trimmedEmail === 'admin' ||
+      trimmedEmail === 'staff';
 
-    // In offline demo mode or when Supabase is not configured
-    if (!isConfigured || !navigator.onLine) {
+    // In offline mode, if Supabase is not configured, or if logging in with local demo credentials
+    if (!isConfigured || !navigator.onLine || isLocalDemoAccount) {
       const localProfile = await findLocalProfile(trimmedEmail);
       if (localProfile) {
         if (!localProfile.is_active) {
@@ -151,10 +160,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(localProfile));
         return {};
       }
-      return {
-        error:
-          'Account not found. Use "admin@crackers.local" or "staff@crackers.local" (or click the quick demo buttons below).',
-      };
+      if (isLocalDemoAccount) {
+        return {
+          error:
+            'Account not found. Use "admin@crackers.local" or "staff@crackers.local" (or click the quick demo buttons below).',
+        };
+      }
     }
 
     try {
@@ -164,6 +175,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (authError || !authData.user) {
+        // Fallback to local profile if matching email exists in local Dexie
+        const localProfile = await findLocalProfile(trimmedEmail);
+        if (localProfile && localProfile.is_active) {
+          setUser(localProfile);
+          localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(localProfile));
+          return {};
+        }
         return { error: authError?.message || 'Invalid email or password' };
       }
 

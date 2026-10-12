@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { db, initLocalDatabase } from '@/db';
-import { Product, OutboxItem } from '@/types';
+import { db, initLocalDatabase, DEFAULT_BRANDS, DEFAULT_CATEGORIES, addCategory } from '@/db';
+import { Product, Brand, Category, OutboxItem } from '@/types';
 import { updateProductInIndex } from '@/db/search';
 import { syncService } from '@/sync/syncService';
 import { formatINR } from '@/lib/format';
@@ -16,12 +16,13 @@ import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
-import { Search, Plus, Download, Upload, Edit, EyeOff, Eye } from 'lucide-react';
+import { Search, Plus, Download, Upload, Edit, EyeOff, Eye, FileSpreadsheet, Tag } from 'lucide-react';
 
 const productSchema = z.object({
   code: z.string().min(1, 'Product code is required').trim(),
   name: z.string().min(1, 'Product name is required').trim(),
   category: z.string().min(1, 'Category is required').trim(),
+  brand: z.string().min(1, 'Brand is required').trim().default('Standard'),
   unit: z.string().default('box'),
   price: z.number().gt(0, 'Price must be greater than 0'),
   stock: z.number().min(0, 'Stock cannot be negative').default(0),
@@ -32,14 +33,21 @@ type ProductFormData = z.infer<typeof productSchema>;
 export const ProductsPage: React.FC = () => {
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [categoriesList, setCategoriesList] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [brandFilter, setBrandFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
 
   // Drawer form state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  // Add Category Modal state
+  const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   // CSV Import Modal state
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
@@ -50,17 +58,20 @@ export const ProductsPage: React.FC = () => {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
     defaultValues: {
+      brand: 'Standard',
+      category: 'Sparklers',
       unit: 'box',
       stock: 0,
       price: 0,
     },
   });
 
-  const loadProducts = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
       let all = await db.products.toArray();
@@ -69,23 +80,50 @@ export const ProductsPage: React.FC = () => {
         all = await db.products.toArray();
       }
       setProducts(all);
+
+      let allBrands = await db.brands.toArray();
+      if (allBrands.length === 0) {
+        allBrands = DEFAULT_BRANDS;
+      }
+      setBrands(allBrands);
+
+      let allCats = await db.categories.toArray();
+      if (allCats.length === 0) {
+        await initLocalDatabase();
+        allCats = await db.categories.toArray();
+      }
+      setCategoriesList(allCats);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadProducts();
+    loadData();
   }, []);
 
-  // Distinct categories
-  const categories = useMemo(() => {
+  // Distinct cracker categories (including seeded Sivakasi categories, db entries, and products)
+  const availableCategoryNames = useMemo(() => {
     const set = new Set<string>();
+    DEFAULT_CATEGORIES.forEach((c) => set.add(c));
+    categoriesList.forEach((c) => {
+      if (c.name && c.is_active) set.add(c.name);
+    });
     products.forEach((p) => {
       if (p.category) set.add(p.category);
     });
     return Array.from(set).sort();
-  }, [products]);
+  }, [categoriesList, products]);
+
+  // Distinct brand names for filter (include any from db plus products)
+  const availableBrandNames = useMemo(() => {
+    const set = new Set<string>();
+    brands.forEach((b) => set.add(b.name));
+    products.forEach((p) => {
+      if (p.brand) set.add(p.brand);
+    });
+    return Array.from(set).sort();
+  }, [brands, products]);
 
   // Filtered products
   const filteredProducts = useMemo(() => {
@@ -94,9 +132,16 @@ export const ProductsPage: React.FC = () => {
         const q = searchQuery.toLowerCase().trim();
         const matchesName = p.name.toLowerCase().includes(q);
         const matchesCode = p.code.toLowerCase().includes(q);
-        if (!matchesName && !matchesCode) return false;
+        const matchesPrice =
+          String(p.price).includes(q) ||
+          Number(p.price).toFixed(2).includes(q) ||
+          Number(p.price).toFixed(0).includes(q);
+        if (!matchesName && !matchesCode && !matchesPrice) return false;
       }
       if (categoryFilter !== 'all' && p.category !== categoryFilter) {
+        return false;
+      }
+      if (brandFilter !== 'all' && (p.brand || 'General') !== brandFilter) {
         return false;
       }
       if (statusFilter !== 'all') {
@@ -105,14 +150,33 @@ export const ProductsPage: React.FC = () => {
       }
       return true;
     });
-  }, [products, searchQuery, categoryFilter, statusFilter]);
+  }, [products, searchQuery, categoryFilter, brandFilter, statusFilter]);
+
+  const handleCreateCategory = async () => {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) {
+      toast('Please enter a category name', 'error');
+      return;
+    }
+    try {
+      const created = await addCategory(trimmed);
+      await loadData();
+      setValue('category', created.name);
+      setNewCategoryName('');
+      setIsAddCategoryOpen(false);
+      toast(`Category "${created.name}" added successfully!`, 'success');
+    } catch (err: any) {
+      toast(err?.message || 'Failed to add category', 'error');
+    }
+  };
 
   const handleOpenCreate = () => {
     setEditingProduct(null);
     reset({
       code: '',
       name: '',
-      category: categories[0] || 'Sparklers',
+      brand: brands[0]?.name || 'Standard',
+      category: availableCategoryNames[0] || 'Sparklers',
       unit: 'box',
       price: 0,
       stock: 0,
@@ -125,6 +189,7 @@ export const ProductsPage: React.FC = () => {
     reset({
       code: product.code,
       name: product.name,
+      brand: product.brand || 'Standard',
       category: product.category,
       unit: product.unit,
       price: product.price,
@@ -148,6 +213,7 @@ export const ProductsPage: React.FC = () => {
       id: productId,
       code: data.code.toUpperCase(),
       name: data.name,
+      brand: data.brand || 'Standard',
       category: data.category,
       unit: data.unit,
       price: data.price,
@@ -177,7 +243,7 @@ export const ProductsPage: React.FC = () => {
 
     toast(editingProduct ? 'Product updated' : 'Product created', 'success');
     setIsDrawerOpen(false);
-    loadProducts();
+    loadData();
   };
 
   const handleToggleActive = async (product: Product) => {
@@ -211,15 +277,40 @@ export const ProductsPage: React.FC = () => {
       updatedStatus ? `Reactivated ${product.name}` : `Deactivated ${product.name}`,
       'info'
     );
-    loadProducts();
+    loadData();
   };
 
-  // CSV Export
+  // Download Sample Format CSV
+  const handleDownloadSampleCsv = () => {
+    const sampleHeaders = 'code,name,brand,category,unit,price,stock\n';
+    const sampleRows = [
+      'SPK-10,10 cm Electric Sparklers,Standard,Sparklers,box,45,250',
+      'RCK-10,Baby Rockets,General,Rockets,box,120,140',
+      'BMB-10,Hydro Bombs 2 inch,General,Bombs,box,95,200',
+      'FLP-10,Flower Pots Special,Standard,Flower Pots,box,180,120',
+      'CHK-10,Ground Chakkars Big,Standard,Ground Chakkars,box,140,160',
+    ].join('\n');
+
+    const csvContent = sampleHeaders + sampleRows;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'crackers_products_sample_format.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast('Sample CSV format downloaded successfully', 'success');
+  };
+
+  // CSV Export with brand
   const handleExportCsv = () => {
-    const headers = ['code', 'name', 'category', 'unit', 'price', 'stock', 'status'];
+    const headers = ['code', 'name', 'brand', 'category', 'unit', 'price', 'stock', 'status'];
     const rows = products.map((p) => [
       `"${p.code}"`,
       `"${p.name.replace(/"/g, '""')}"`,
+      `"${p.brand || 'Standard'}"`,
       `"${p.category}"`,
       `"${p.unit}"`,
       p.price,
@@ -232,7 +323,7 @@ export const ProductsPage: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `crackers_products_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `vna_crackers_products_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -262,6 +353,7 @@ export const ProductsPage: React.FC = () => {
     const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, '').toLowerCase());
     const codeIdx = headers.indexOf('code');
     const nameIdx = headers.indexOf('name');
+    const brandIdx = headers.indexOf('brand');
     const catIdx = headers.indexOf('category');
     const unitIdx = headers.indexOf('unit');
     const priceIdx = headers.indexOf('price');
@@ -271,12 +363,12 @@ export const ProductsPage: React.FC = () => {
 
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i];
-      // Basic comma split respecting quotes
       const values = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || line.split(',');
       const cleanVals = values.map((v) => v.trim().replace(/^"|"$/g, ''));
 
       const code = cleanVals[codeIdx]?.toUpperCase() || '';
       const name = cleanVals[nameIdx] || '';
+      const brand = brandIdx > -1 ? (cleanVals[brandIdx] || 'Standard') : 'Standard';
       const category = cleanVals[catIdx] || 'General';
       const unit = cleanVals[unitIdx] || 'box';
       const price = parseFloat(cleanVals[priceIdx] || '0');
@@ -289,7 +381,7 @@ export const ProductsPage: React.FC = () => {
       if (isNaN(stock) || stock < 0) errors.push('Invalid stock');
 
       previewList.push({
-        data: { code, name, category, unit, price, stock },
+        data: { code, name, brand, category, unit, price, stock },
         errors,
       });
     }
@@ -319,6 +411,7 @@ export const ProductsPage: React.FC = () => {
           id: prodId,
           code: row.data.code,
           name: row.data.name,
+          brand: row.data.brand || 'Standard',
           category: row.data.category,
           unit: row.data.unit,
           price: row.data.price,
@@ -353,7 +446,7 @@ export const ProductsPage: React.FC = () => {
       toast(`Successfully imported ${recordsToPut.length} products`, 'success');
       setIsCsvModalOpen(false);
       setCsvPreviewData([]);
-      loadProducts();
+      loadData();
     } catch (err: any) {
       toast(`Import failed: ${err.message}`, 'error');
     } finally {
@@ -364,11 +457,11 @@ export const ProductsPage: React.FC = () => {
   return (
     <div className="space-y-4">
       {/* Controls Bar */}
-      <div className="bg-surface border border-border rounded p-4 flex flex-col md:flex-row gap-3 items-center justify-between">
+      <div className="bg-surface border border-border rounded p-4 flex flex-col md:flex-row gap-3 items-center justify-between shadow-subtle">
         <div className="relative w-full md:w-80">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
           <Input
-            placeholder="Search by code or cracker name..."
+            placeholder="Search by code, name, or price..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 min-h-[40px] text-xs"
@@ -376,19 +469,35 @@ export const ProductsPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          {/* Brand Filter */}
+          <Select
+            value={brandFilter}
+            onChange={(e) => setBrandFilter(e.target.value)}
+            className="text-xs min-h-[40px]"
+          >
+            <option value="all">All Brands</option>
+            {availableBrandNames.map((b) => (
+              <option key={b} value={b}>
+                Brand: {b}
+              </option>
+            ))}
+          </Select>
+
+          {/* Category Filter */}
           <Select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="text-xs min-h-[40px]"
           >
             <option value="all">All Categories</option>
-            {categories.map((c) => (
+            {availableCategoryNames.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
             ))}
           </Select>
 
+          {/* Status Filter */}
           <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -399,17 +508,31 @@ export const ProductsPage: React.FC = () => {
             <option value="inactive">Deactivated Only</option>
           </Select>
 
+          {/* Sample CSV Download */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleDownloadSampleCsv}
+            title="Download sample CSV template format"
+          >
+            <FileSpreadsheet size={14} className="text-accent" />
+            <span>Sample Format</span>
+          </Button>
+
+          {/* Export CSV */}
           <Button variant="secondary" size="sm" onClick={handleExportCsv} title="Export products as CSV">
             <Download size={14} />
             <span>Export CSV</span>
           </Button>
 
-          <label className="inline-flex items-center justify-center font-medium transition-colors select-none rounded focus:outline-none focus:ring-2 focus:ring-accent bg-surface text-text border border-border hover:bg-background text-xs px-2.5 py-1.5 gap-1.5 min-h-[44px] cursor-pointer">
+          {/* Import CSV */}
+          <label className="inline-flex items-center justify-center font-medium transition-colors select-none rounded focus:outline-none focus:ring-2 focus:ring-accent bg-surface text-text border border-border hover:bg-background text-xs px-2.5 py-1.5 gap-1.5 min-h-[40px] cursor-pointer">
             <Upload size={14} />
             <span>Import CSV</span>
             <input type="file" accept=".csv" onChange={handleFileChange} className="hidden" />
           </label>
 
+          {/* Add Product */}
           <Button variant="primary" size="sm" onClick={handleOpenCreate}>
             <Plus size={14} />
             <span>Add Product</span>
@@ -419,7 +542,7 @@ export const ProductsPage: React.FC = () => {
 
       {/* Products Table */}
       {loading ? (
-        <TableSkeleton rows={8} cols={7} />
+        <TableSkeleton rows={8} cols={8} />
       ) : filteredProducts.length === 0 ? (
         <EmptyState
           message="No products match the selected criteria"
@@ -432,6 +555,7 @@ export const ProductsPage: React.FC = () => {
             <TableRow>
               <TableHead>Code</TableHead>
               <TableHead>Name</TableHead>
+              <TableHead>Brand</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Unit</TableHead>
               <TableHead className="text-right">Price (₹)</TableHead>
@@ -441,61 +565,85 @@ export const ProductsPage: React.FC = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredProducts.map((p) => (
-              <TableRow key={p.id}>
-                <TableCell className="font-mono font-semibold text-accent">{p.code}</TableCell>
-                <TableCell className="font-medium">{p.name}</TableCell>
-                <TableCell className="text-text-muted">{p.category}</TableCell>
-                <TableCell className="text-xs text-text-muted uppercase">{p.unit}</TableCell>
-                <TableCell className="text-right tabular-nums font-semibold">
-                  {formatINR(p.price)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  <span className={p.stock <= 10 ? 'text-danger font-semibold' : ''}>
-                    {p.stock}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <span
-                    className={`inline-block px-2 py-0.5 text-[11px] font-semibold rounded ${
-                      p.is_active
-                        ? 'bg-success-light text-success'
-                        : 'bg-danger-light text-danger'
-                    }`}
-                  >
-                    {p.is_active ? 'Active' : 'Deactivated'}
-                  </span>
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleOpenEdit(p)}
-                      className="min-h-[32px] py-1 text-xs"
+            {filteredProducts.map((p) => {
+              const brandName = p.brand || 'Standard';
+              const isStandard = brandName === 'Standard';
+
+              return (
+                <TableRow key={p.id}>
+                  <TableCell className="font-mono font-semibold text-accent">{p.code}</TableCell>
+                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold ${
+                        isStandard
+                          ? 'bg-accent/10 text-accent border border-accent/20'
+                          : 'bg-background text-text border border-border'
+                      }`}
                     >
-                      <Edit size={12} />
-                      <span>Edit</span>
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleToggleActive(p)}
-                      title={p.is_active ? 'Deactivate product' : 'Reactivate product'}
-                      className="min-h-[32px] py-1 text-xs"
+                      <Tag size={11} />
+                      {brandName}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-text-muted">{p.category}</TableCell>
+                  <TableCell className="text-xs text-text-muted uppercase">{p.unit}</TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold">
+                    {formatINR(p.price)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    <span
+                      className={`font-medium ${
+                        p.stock <= 10 ? 'text-danger font-bold' : 'text-text'
+                      }`}
                     >
-                      {p.is_active ? <EyeOff size={12} /> : <Eye size={12} />}
-                      <span>{p.is_active ? 'Deactivate' : 'Reactivate'}</span>
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+                      {p.stock}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        p.is_active
+                          ? 'bg-success-light text-success'
+                          : 'bg-danger-light text-danger'
+                      }`}
+                    >
+                      {p.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleOpenEdit(p)}
+                        className="p-1 min-h-[32px]"
+                        title="Edit product"
+                      >
+                        <Edit size={14} />
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleToggleActive(p)}
+                        className={`p-1 min-h-[32px] ${
+                          p.is_active
+                            ? 'text-danger hover:bg-danger-light'
+                            : 'text-success hover:bg-success-light'
+                        }`}
+                        title={p.is_active ? 'Deactivate' : 'Reactivate'}
+                      >
+                        {p.is_active ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       )}
 
-      {/* PRODUCT ADD / EDIT DRAWER */}
+      {/* CREATE / EDIT PRODUCT DRAWER */}
       <Drawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
@@ -517,22 +665,58 @@ export const ProductsPage: React.FC = () => {
             placeholder="e.g. 50 cm Electric Sparklers"
           />
 
+          {/* Brand Selector */}
           <div>
-            <label className="block text-xs font-medium text-text mb-1">Category</label>
-            <input
-              list="categories-list"
-              className="w-full min-h-[44px] px-3 py-2 text-base sm:text-sm bg-surface text-text border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            <label className="block text-xs font-semibold text-text mb-1">
+              Brand <span className="text-danger">*</span>
+            </label>
+            <div className="flex gap-2">
+              <select
+                className="w-full min-h-[44px] px-3 py-2 text-sm bg-surface text-text border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                {...register('brand')}
+              >
+                {availableBrandNames.map((bName) => (
+                  <option key={bName} value={bName}>
+                    {bName} {bName === 'Standard' ? '(Standard Fireworks)' : bName === 'General' ? '(General / Local)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-[11px] text-text-muted mt-1">
+              Select manufacturer/brand (Standard, General, or custom added under Brands module).
+            </p>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-text">
+                Category <span className="text-danger">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsAddCategoryOpen(true)}
+                className="text-xs text-accent hover:underline flex items-center gap-1 font-medium"
+              >
+                <Plus size={13} />
+                <span>+ Add Category</span>
+              </button>
+            </div>
+            <select
+              className="w-full min-h-[44px] px-3 py-2 text-sm bg-surface text-text border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent"
               {...register('category')}
-              placeholder="Select or enter category..."
-            />
-            <datalist id="categories-list">
-              {categories.map((c) => (
-                <option key={c} value={c} />
+            >
+              {availableCategoryNames.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
               ))}
-            </datalist>
+            </select>
             {errors.category && (
               <p className="mt-1 text-xs text-danger font-medium">{errors.category.message}</p>
             )}
+            <p className="text-[11px] text-text-muted mt-1">
+              Select standard cracker category or click "+ Add Category" to create a custom category.
+            </p>
           </div>
 
           <Select label="Packaging Unit" {...register('unit')} error={errors.unit?.message}>
@@ -593,6 +777,7 @@ export const ProductsPage: React.FC = () => {
                 <tr>
                   <th className="p-2 text-left">Code</th>
                   <th className="p-2 text-left">Name</th>
+                  <th className="p-2 text-left">Brand</th>
                   <th className="p-2 text-left">Category</th>
                   <th className="p-2 text-right">Price</th>
                   <th className="p-2 text-right">Stock</th>
@@ -604,6 +789,7 @@ export const ProductsPage: React.FC = () => {
                   <tr key={idx} className={row.errors.length > 0 ? 'bg-danger-light/30' : ''}>
                     <td className="p-2 font-mono font-medium">{row.data.code}</td>
                     <td className="p-2">{row.data.name}</td>
+                    <td className="p-2 font-semibold text-accent">{row.data.brand || 'Standard'}</td>
                     <td className="p-2 text-text-muted">{row.data.category}</td>
                     <td className="p-2 text-right tabular-nums">{row.data.price}</td>
                     <td className="p-2 text-right tabular-nums">{row.data.stock}</td>
@@ -639,6 +825,41 @@ export const ProductsPage: React.FC = () => {
             </Button>
           </div>
         </div>
+      </Dialog>
+
+      {/* ADD NEW CATEGORY MODAL */}
+      <Dialog
+        isOpen={isAddCategoryOpen}
+        onClose={() => setIsAddCategoryOpen(false)}
+        title="Add New Cracker Category"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleCreateCategory();
+          }}
+          className="space-y-4"
+        >
+          <p className="text-xs text-text-muted">
+            Enter the name of the new cracker category. It will instantly appear in all category dropdowns and product filters.
+          </p>
+          <Input
+            label="Category Name"
+            placeholder="e.g. Aerial Confetti, Mega Chakkars, Laser Fountains"
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            autoFocus
+          />
+          <div className="flex justify-end gap-2 pt-2 border-t border-border">
+            <Button variant="secondary" type="button" onClick={() => setIsAddCategoryOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" disabled={!newCategoryName.trim()}>
+              <Plus size={14} />
+              <span>Add Category</span>
+            </Button>
+          </div>
+        </form>
       </Dialog>
     </div>
   );

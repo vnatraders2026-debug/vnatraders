@@ -6,12 +6,19 @@ let productsCacheMap = new Map<string, Product>();
 
 export function createProductSearchIndex(products: Product[]): MiniSearch<Product> {
   const miniSearch = new MiniSearch<Product>({
-    fields: ['name', 'code', 'category'],
-    storeFields: ['id', 'code', 'name', 'category', 'unit', 'price', 'stock', 'is_active'],
+    fields: ['name', 'code', 'price'],
+    storeFields: ['id', 'code', 'name', 'brand', 'category', 'unit', 'price', 'stock', 'is_active'],
+    extractField: (document: Product, fieldName: string) => {
+      if (fieldName === 'price') {
+        const val = Number(document.price) || 0;
+        return `${val} ${val.toFixed(0)} ${val.toFixed(2)}`;
+      }
+      return (document as any)[fieldName] != null ? String((document as any)[fieldName]) : '';
+    },
     searchOptions: {
       fuzzy: 0.2,
       prefix: true,
-      boost: { code: 2.5, name: 1.5, category: 1.0 },
+      boost: { code: 3.0, name: 2.0, price: 1.5 },
     },
   });
 
@@ -52,7 +59,7 @@ export function updateProductInIndex(product: Product): void {
 
 /**
  * Instant local search with target <10ms execution time.
- * If query is empty, returns first N active products.
+ * Searches ONLY by product code, product name, and price.
  */
 export function searchProducts(
   query: string,
@@ -74,29 +81,61 @@ export function searchProducts(
     return Array.from(productsCacheMap.values());
   }
 
-  // 1. Direct check: exact code match (for barcode scanners or direct code typing)
-  const exactCodeUpper = trimmed.toUpperCase();
-  for (const p of productsCacheMap.values()) {
-    if (p.code.toUpperCase() === exactCodeUpper) {
-      // Move exact match to first position, then append search results
-      const results = miniSearchInstance!.search(trimmed);
-      const otherProducts = results
-        .map((r) => productsCacheMap.get(r.id))
-        .filter((p): p is Product => Boolean(p && p.id !== p.id));
-      return [p, ...otherProducts];
+  const qLower = trimmed.toLowerCase();
+  const allActive = Array.from(productsCacheMap.values()).filter((p) => p.is_active);
+
+  const exactCodeMatches: Product[] = [];
+  const exactPriceMatches: Product[] = [];
+  const directMatches: Product[] = [];
+  const seenIds = new Set<string>();
+
+  const isNumericQuery = !isNaN(Number(trimmed)) && trimmed.length > 0;
+  const numQuery = isNumericQuery ? Number(trimmed) : null;
+
+  // 1. Exact code and exact price matching
+  for (const p of allActive) {
+    if (p.code.toLowerCase() === qLower) {
+      exactCodeMatches.push(p);
+      seenIds.add(p.id);
+    } else if (numQuery !== null && (p.price === numQuery || Number(p.price).toFixed(0) === trimmed)) {
+      exactPriceMatches.push(p);
+      seenIds.add(p.id);
     }
   }
 
-  // 2. MiniSearch fuzzy prefix search
-  const results = miniSearchInstance!.search(trimmed);
-  const matched: Product[] = [];
+  // 2. MiniSearch fuzzy prefix search across name, code, price
+  const searchResults: Product[] = [];
+  try {
+    const results = miniSearchInstance!.search(trimmed);
+    for (const r of results) {
+      if (!seenIds.has(r.id)) {
+        const prod = productsCacheMap.get(r.id);
+        if (prod && prod.is_active) {
+          searchResults.push(prod);
+          seenIds.add(r.id);
+        }
+      }
+    }
+  } catch {
+    // MiniSearch syntax error fallback
+  }
 
-  for (const r of results) {
-    const prod = productsCacheMap.get(r.id);
-    if (prod && prod.is_active) {
-      matched.push(prod);
+  // 3. Substring check strictly limited to name, code, and price
+  for (const p of allActive) {
+    if (!seenIds.has(p.id)) {
+      const codeMatches = p.code.toLowerCase().includes(qLower);
+      const nameMatches = p.name.toLowerCase().includes(qLower);
+      const priceMatches =
+        String(p.price).includes(trimmed) ||
+        Number(p.price).toFixed(2).includes(trimmed) ||
+        Number(p.price).toFixed(0).includes(trimmed);
+
+      if (codeMatches || nameMatches || priceMatches) {
+        directMatches.push(p);
+        seenIds.add(p.id);
+      }
     }
   }
 
-  return matched;
+  return [...exactCodeMatches, ...exactPriceMatches, ...searchResults, ...directMatches];
 }

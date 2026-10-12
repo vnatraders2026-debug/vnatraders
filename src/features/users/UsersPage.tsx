@@ -11,6 +11,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { UserPlus, KeyRound, Shield, EyeOff, Eye } from 'lucide-react';
+import { supabase, isConfigured } from '@/lib/supabase';
 
 export const UsersPage: React.FC = () => {
   const { user: currentUser } = useAuth();
@@ -39,8 +40,19 @@ export const UsersPage: React.FC = () => {
   const loadProfiles = async () => {
     setLoading(true);
     try {
+      if (isConfigured && navigator.onLine) {
+        const { data: serverProfiles, error } = await supabase.from('profiles').select('*');
+        if (!error && serverProfiles) {
+          // Replace local Dexie cache with exact Supabase profiles
+          await db.profiles.clear();
+          await db.profiles.bulkPut(serverProfiles as Profile[]);
+          setProfiles(serverProfiles as Profile[]);
+          return;
+        }
+      }
       const all = await db.profiles.toArray();
-      setProfiles(all);
+      const real = all.filter((p) => !p.id.startsWith('00000000'));
+      setProfiles(real);
     } finally {
       setLoading(false);
     }
@@ -58,10 +70,36 @@ export const UsersPage: React.FC = () => {
       return;
     }
 
+    const cleanEmail = createData.email.trim().toLowerCase();
+    const cleanName = createData.full_name.trim();
+    let assignedId = crypto.randomUUID();
+
+    if (isConfigured && navigator.onLine) {
+      try {
+        const { data: createdUserId, error: rpcError } = await supabase.rpc('create_user', {
+          p_email: cleanEmail,
+          p_password: createData.password,
+          p_full_name: cleanName,
+          p_role: createData.role,
+        });
+
+        if (rpcError) {
+          toast(`Supabase error: ${rpcError.message}`, 'error');
+          return;
+        }
+        if (createdUserId) {
+          assignedId = createdUserId;
+        }
+      } catch (err: any) {
+        toast(`Network error: ${err.message}`, 'error');
+        return;
+      }
+    }
+
     const newProfile: Profile = {
-      id: crypto.randomUUID(),
-      full_name: createData.full_name.trim(),
-      email: createData.email.trim().toLowerCase(),
+      id: assignedId,
+      full_name: cleanName,
+      email: cleanEmail,
       role: createData.role,
       is_active: true,
       created_at: new Date().toISOString(),
@@ -80,7 +118,7 @@ export const UsersPage: React.FC = () => {
       created_at: new Date().toISOString(),
     });
 
-    toast(`Created user ${newProfile.full_name}`, 'success');
+    toast(`Successfully created user ${newProfile.full_name} in database`, 'success');
     setIsCreateOpen(false);
     setCreateData({ full_name: '', email: '', password: '', role: 'staff' });
     loadProfiles();
@@ -94,6 +132,9 @@ export const UsersPage: React.FC = () => {
       return;
     }
 
+    if (isConfigured && navigator.onLine) {
+      await supabase.from('profiles').update({ role: newRole }).eq('id', roleChangeUser.id);
+    }
     await db.profiles.update(roleChangeUser.id, { role: newRole });
     await db.activity_logs.add({
       id: Date.now(),
@@ -120,6 +161,9 @@ export const UsersPage: React.FC = () => {
     }
 
     const nextState = !confirmToggleUser.is_active;
+    if (isConfigured && navigator.onLine) {
+      await supabase.from('profiles').update({ is_active: nextState }).eq('id', confirmToggleUser.id);
+    }
     await db.profiles.update(confirmToggleUser.id, { is_active: nextState });
 
     await db.activity_logs.add({
@@ -147,6 +191,17 @@ export const UsersPage: React.FC = () => {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetPwdUser || !newPassword) return;
+
+    if (isConfigured && navigator.onLine) {
+      const { error: rpcError } = await supabase.rpc('reset_user_password', {
+        p_user_id: resetPwdUser.id,
+        p_new_password: newPassword,
+      });
+      if (rpcError) {
+        toast(`Failed to reset password: ${rpcError.message}`, 'error');
+        return;
+      }
+    }
 
     await db.activity_logs.add({
       id: Date.now(),

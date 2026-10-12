@@ -7,6 +7,7 @@ import { Bill, BillItem, Profile, ShopSettings } from '@/types';
 import { formatINR, formatISTDate } from '@/lib/format';
 import { checkBillEditPermission } from '@/lib/permissions';
 import { ReceiptModal } from '@/features/billing/ReceiptModal';
+import { WhatsAppModal } from '@/features/billing/WhatsAppModal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -14,7 +15,7 @@ import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { Search, Eye, Edit3, Printer, History } from 'lucide-react';
+import { Search, Eye, Edit3, Printer, History, MessageSquare } from 'lucide-react';
 
 export const BillsPage: React.FC = () => {
   const { user } = useAuth();
@@ -34,6 +35,8 @@ export const BillsPage: React.FC = () => {
   // Selected bill for viewing/reprint
   const [viewingBill, setViewingBill] = useState<{ bill: Bill; items: BillItem[] } | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [whatsAppBill, setWhatsAppBill] = useState<Bill | null>(null);
+  const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
 
   useEffect(() => {
@@ -271,6 +274,19 @@ export const BillsPage: React.FC = () => {
                             <Edit3 size={14} />
                             <span>Edit</span>
                           </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => {
+                              setWhatsAppBill(b);
+                              setIsWhatsAppOpen(true);
+                            }}
+                            className="min-h-[32px] py-1 text-xs text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800"
+                            title="Send Bill to WhatsApp"
+                          >
+                            <MessageSquare size={14} />
+                            <span>WhatsApp</span>
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -335,6 +351,19 @@ export const BillsPage: React.FC = () => {
                       >
                         <Edit3 size={14} />
                         <span>Edit</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setWhatsAppBill(b);
+                          setIsWhatsAppOpen(true);
+                        }}
+                        className="min-h-[36px] py-1 text-xs text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800"
+                        title="Send Bill to WhatsApp"
+                      >
+                        <MessageSquare size={14} />
+                        <span>WhatsApp</span>
                       </Button>
                     </div>
                   </div>
@@ -458,6 +487,19 @@ export const BillsPage: React.FC = () => {
             setViewingBill(null);
           }}
           onClose={() => setViewingBill(null)}
+        />
+      )}
+
+      {/* WHATSAPP BILL SHARE MODAL */}
+      {isWhatsAppOpen && whatsAppBill && (
+        <WhatsAppModal
+          isOpen={isWhatsAppOpen}
+          onClose={() => {
+            setIsWhatsAppOpen(false);
+            setWhatsAppBill(null);
+          }}
+          bill={whatsAppBill}
+          settings={shopSettings || undefined}
         />
       )}
     </div>

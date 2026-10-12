@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSync } from '@/sync/useSync';
-import { PlusCircle, Menu, RefreshCw } from 'lucide-react';
+import { syncService } from '@/sync/syncService';
+import { useFullscreen } from '@/lib/fullscreen';
+import { useToast } from '@/components/ui/Toast';
+import { PlusCircle, Menu, RefreshCw, Maximize, Minimize } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 import { VnaLogo } from '@/components/VnaLogo';
@@ -13,8 +16,25 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ onToggleMobileMenu, title }) => {
   const { state, pendingCount, retrySync } = useSync();
+  const { isFullscreen, toggleFullscreen } = useFullscreen();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const isBilling = location.pathname === '/billing';
+
+  const handleCloudRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const res = await syncService.forceFreshPullFromSupabase();
+      toast(res.message, 'success');
+    } catch (err: any) {
+      toast(err?.message || 'Refresh failed', 'error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const getStatusBadge = () => {
     switch (state) {
@@ -57,28 +77,58 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleMobileMenu, title }) => 
   };
 
   return (
-    <header className="h-14 border-b border-border bg-surface px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
-      <div className="flex items-center gap-3">
-        {/* Mobile menu trigger */}
+    <header className="h-14 border-b border-border bg-surface px-3 sm:px-6 flex items-center justify-between sticky top-0 z-20">
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Menu trigger: shown on mobile, and ALSO on desktop when in billing mode so menu stays accessible */}
         <button
           onClick={onToggleMobileMenu}
-          className="p-2 -ml-2 rounded text-text-muted hover:text-text hover:bg-background lg:hidden focus:outline-none focus:ring-2 focus:ring-accent"
+          className={`p-2 -ml-1 rounded text-text-muted hover:text-text hover:bg-background ${
+            isBilling ? '' : 'lg:hidden'
+          } focus:outline-none focus:ring-2 focus:ring-accent`}
           aria-label="Open menu"
+          title={isBilling ? 'Open Navigation Menu' : 'Open menu'}
         >
           <Menu size={20} />
         </button>
-        <div className="lg:hidden">
+        <div className={`${isBilling ? '' : 'lg:hidden'}`}>
           <VnaLogo size="sm" showText={false} />
         </div>
-        <h1 className="text-base sm:text-lg font-bold text-text">{title}</h1>
+        <h1 className="text-base sm:text-lg font-bold text-text truncate max-w-[160px] sm:max-w-none">
+          {title}
+        </h1>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         {/* Connection status indicator */}
-        <div aria-live="polite">{getStatusBadge()}</div>
+        <div aria-live="polite" className="hidden xs:block">
+          {getStatusBadge()}
+        </div>
+
+        {/* Cloud Refresh Button: clears local cache and pulls fresh data from Supabase */}
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={handleCloudRefresh}
+          disabled={isRefreshing}
+          className="min-h-[36px] py-1 text-xs text-accent border-accent/40 hover:bg-accent-light gap-1.5 font-medium"
+          title="Clear local cache & pull fresh data from Supabase cloud"
+        >
+          <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+          <span className="hidden md:inline">{isRefreshing ? 'Refreshing...' : 'Refresh Cloud'}</span>
+        </Button>
+
+        {/* Fullscreen Toggle Button */}
+        <button
+          onClick={toggleFullscreen}
+          className="px-2.5 py-1.5 rounded text-text-muted hover:text-text hover:bg-background border border-border text-xs flex items-center gap-1.5 min-h-[36px] transition-colors"
+          title={isFullscreen ? 'Exit Fullscreen Mode' : 'Enter Fullscreen Mode'}
+        >
+          {isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
+          <span className="hidden sm:inline font-medium">{isFullscreen ? 'Exit Full' : 'Fullscreen'}</span>
+        </button>
 
         {/* Global Quick Action: New Bill (if not already on billing screen) */}
-        {location.pathname !== '/billing' && (
+        {!isBilling && (
           <Button
             size="sm"
             variant="primary"

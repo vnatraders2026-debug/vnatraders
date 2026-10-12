@@ -36,13 +36,19 @@ export const AppShell: React.FC = () => {
     return 'VNA Crackers';
   };
 
+  const isBilling = location.pathname === '/billing';
+
   return (
     <div className="min-h-screen bg-background text-text flex">
-      {/* Sidebar navigation */}
-      <Sidebar isOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
+      {/* Sidebar navigation: permanent bar hidden on /billing so New Bill gets 100% full screen width */}
+      <Sidebar
+        isOpen={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        hidePermanent={isBilling}
+      />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 pb-16 sm:pb-0">
+      <div className={`flex-1 flex flex-col min-w-0 ${isBilling ? 'pb-0' : 'pb-16 sm:pb-0'}`}>
         {/* PWA Update Banner */}
         {needRefresh && (
           <div className="bg-accent text-white px-4 py-2.5 flex items-center justify-between text-xs sm:text-sm font-medium sticky top-0 z-40">
@@ -74,13 +80,13 @@ export const AppShell: React.FC = () => {
           title={getPageTitle(location.pathname)}
         />
 
-        <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
+        <main className={`flex-1 ${isBilling ? 'p-1 sm:p-3' : 'p-4 sm:p-6'} overflow-y-auto`}>
           <Outlet />
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation Bar */}
-      <BottomTabs />
+      {/* Mobile Bottom Navigation Bar (hidden in POS billing mode) */}
+      {!isBilling && <BottomTabs />}
     </div>
   );
 };

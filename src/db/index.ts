@@ -1,6 +1,8 @@
 import Dexie, { Table } from 'dexie';
 import {
   Product,
+  Brand,
+  Category,
   Bill,
   BillItem,
   OutboxItem,
@@ -22,35 +24,35 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   paper_size: '80mm',
 };
 
-export const INITIAL_PRODUCTS: Product[] = [
-  { id: '11111111-1111-1111-1111-111111110001', code: 'SPK-01', name: '10 cm Electric Sparklers', category: 'Sparklers', unit: 'box', price: 45, stock: 250, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110002', code: 'SPK-02', name: '15 cm Colour Sparklers', category: 'Sparklers', unit: 'box', price: 75, stock: 180, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110003', code: 'SPK-03', name: '30 cm Green Sparklers', category: 'Sparklers', unit: 'box', price: 140, stock: 120, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110004', code: 'SPK-04', name: '50 cm Deluxe Sparklers', category: 'Sparklers', unit: 'box', price: 260, stock: 90, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110005', code: 'FLP-01', name: 'Flower Pots Small', category: 'Flower Pots', unit: 'box', price: 110, stock: 150, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110006', code: 'FLP-02', name: 'Flower Pots Special', category: 'Flower Pots', unit: 'box', price: 180, stock: 130, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110007', code: 'FLP-03', name: 'Flower Pots Asoka', category: 'Flower Pots', unit: 'box', price: 250, stock: 100, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110008', code: 'FLP-04', name: 'Colour Koti Pots', category: 'Flower Pots', unit: 'box', price: 320, stock: 75, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110009', code: 'CHK-01', name: 'Ground Chakkars Small', category: 'Ground Chakkars', unit: 'box', price: 85, stock: 200, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110010', code: 'CHK-02', name: 'Ground Chakkars Big', category: 'Ground Chakkars', unit: 'box', price: 140, stock: 160, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110011', code: 'CHK-03', name: 'Ground Chakkars Special Red', category: 'Ground Chakkars', unit: 'box', price: 195, stock: 110, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110012', code: 'CHK-04', name: 'Whistling Chakkars', category: 'Ground Chakkars', unit: 'box', price: 240, stock: 80, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110013', code: 'RCK-01', name: 'Baby Rockets', category: 'Rockets', unit: 'box', price: 120, stock: 140, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110014', code: 'RCK-02', name: 'Bombing Rockets', category: 'Rockets', unit: 'box', price: 190, stock: 100, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110015', code: 'RCK-03', name: 'Lunik Whistling Rockets', category: 'Rockets', unit: 'box', price: 280, stock: 60, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110016', code: 'BMB-01', name: 'Hydro Bombs 2 inch', category: 'Bombs', unit: 'box', price: 95, stock: 220, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110017', code: 'BMB-02', name: 'Classic King Bombs', category: 'Bombs', unit: 'box', price: 160, stock: 150, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110018', code: 'BMB-03', name: 'Digital Sound Bombs', category: 'Bombs', unit: 'box', price: 230, stock: 90, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110019', code: 'FNC-01', name: '12 Shots Multi Colour', category: 'Fancy Shots', unit: 'piece', price: 350, stock: 85, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110020', code: 'FNC-02', name: '30 Shots Sky Thunder', category: 'Fancy Shots', unit: 'piece', price: 780, stock: 50, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110021', code: 'FNC-03', name: '60 Shots Royal Display', category: 'Fancy Shots', unit: 'piece', price: 1550, stock: 30, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110022', code: 'FNC-04', name: '120 Shots Mega Fireworks', category: 'Fancy Shots', unit: 'piece', price: 2900, stock: 15, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110023', code: 'GFT-01', name: 'Standard Family Gift Box 21 Items', category: 'Gift Boxes', unit: 'box', price: 850, stock: 45, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110024', code: 'GFT-02', name: 'Deluxe Festive Box 35 Items', category: 'Gift Boxes', unit: 'box', price: 1650, stock: 35, is_active: true },
-  { id: '11111111-1111-1111-1111-111111110025', code: 'GFT-03', name: 'Premium VIP Gift Box 52 Items', category: 'Gift Boxes', unit: 'box', price: 3200, stock: 20, is_active: true },
+export const DEFAULT_BRANDS: Brand[] = [
+  { id: 'brand-standard', name: 'Standard', is_active: true, created_at: new Date().toISOString() },
+  { id: 'brand-general', name: 'General', is_active: true, created_at: new Date().toISOString() },
 ];
 
+export const DEFAULT_CATEGORIES: string[] = [
+  'Sparklers',
+  'Ground Chakkars',
+  'Flower Pots',
+  'Rockets',
+  'Bombs & Sound Crackers',
+  'Bijili Crackers',
+  'Single & Multi Shots',
+  'Fancy Sky Shots',
+  'Fancy Novelties',
+  'Twinkling Stars',
+  'Fountains & Cones',
+  'Garlands (Wala Crackers)',
+  'Roll Caps & Ring Caps',
+  'Gift Boxes',
+  'Party Poppers',
+  'Kids Special Crackers',
+];
+
+export const INITIAL_PRODUCTS: Product[] = [];
+
 export class CrackersBillingDB extends Dexie {
+  brands!: Table<Brand, string>;
+  categories!: Table<Category, string>;
   products!: Table<Product, string>;
   bills!: Table<Bill, string>;
   bill_items!: Table<BillItem, string>;
@@ -79,13 +81,22 @@ export class CrackersBillingDB extends Dexie {
     this.version(2).stores({
       profiles: 'id, role, is_active, email',
     });
+
+    this.version(3).stores({
+      brands: 'id, name, is_active, created_at',
+      products: 'id, code, name, category, brand, is_active, updated_at',
+    });
+
+    this.version(4).stores({
+      categories: 'id, name, is_active, created_at',
+    });
   }
 }
 
 export const db = new CrackersBillingDB();
 
 /**
- * Initializes local database with default settings, seed products, and fallback demo profiles
+ * Initializes local database with default settings and default brands
  */
 export async function initLocalDatabase(): Promise<void> {
   // Check settings
@@ -94,39 +105,72 @@ export async function initLocalDatabase(): Promise<void> {
     await db.settings.put({ key: 'shop_settings', value: DEFAULT_SETTINGS });
   }
 
-  // Seed default products if empty
-  const count = await db.products.count();
-  if (count === 0) {
-    const now = new Date().toISOString();
-    const seeded = INITIAL_PRODUCTS.map((p) => ({
-      ...p,
-      created_at: now,
-      updated_at: now,
-    }));
-    await db.products.bulkPut(seeded);
+  // Ensure default brands (Standard, General) exist
+  const brandCount = await db.brands.count();
+  if (brandCount === 0) {
+    await db.brands.bulkPut(DEFAULT_BRANDS);
   }
 
-  // Guarantee demo admin and staff accounts exist
-  const adminProf = await db.profiles.get('00000000-0000-0000-0000-000000000001');
-  if (!adminProf) {
-    await db.profiles.put({
-      id: '00000000-0000-0000-0000-000000000001',
-      full_name: 'Admin Manager',
-      role: 'admin',
+  // Ensure default cracker categories exist
+  const catCount = await db.categories.count();
+  if (catCount === 0) {
+    const catsToInsert: Category[] = DEFAULT_CATEGORIES.map((name, idx) => ({
+      id: `cat-${idx + 1}-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+      name,
       is_active: true,
-      email: 'admin@crackers.local',
-    });
+      created_at: new Date().toISOString(),
+    }));
+    await db.categories.bulkPut(catsToInsert);
   }
-  const staffProf = await db.profiles.get('00000000-0000-0000-0000-000000000002');
-  if (!staffProf) {
-    await db.profiles.put({
-      id: '00000000-0000-0000-0000-000000000002',
-      full_name: 'Staff Cashier',
-      role: 'staff',
-      is_active: true,
-      email: 'staff@crackers.local',
-    });
+
+  // Automatically remove any legacy pre-filled / demo products from previous sessions
+  const legacyDemoProducts = await db.products
+    .filter((p) => p.id.startsWith('11111111-') || p.id.startsWith('demo-'))
+    .toArray();
+  if (legacyDemoProducts.length > 0) {
+    await db.products.bulkDelete(legacyDemoProducts.map((p) => p.id));
   }
+}
+
+/**
+ * Add a new cracker category locally and queue for cloud sync
+ */
+export async function addCategory(name: string): Promise<Category> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('Category name cannot be empty');
+
+  const existing = await db.categories.where('name').equalsIgnoreCase(trimmed).first();
+  if (existing) {
+    if (!existing.is_active) {
+      await db.categories.update(existing.id, { is_active: true });
+      existing.is_active = true;
+    }
+    return existing;
+  }
+
+  const newCat: Category = {
+    id: `cat-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
+    name: trimmed,
+    is_active: true,
+    created_at: new Date().toISOString(),
+  };
+
+  const outboxItem: OutboxItem = {
+    id: crypto.randomUUID(),
+    entity: 'categories',
+    op: 'insert',
+    payload: newCat,
+    status: 'pending',
+    attempts: 0,
+    created_at: newCat.created_at!,
+  };
+
+  await db.transaction('rw', [db.categories, db.outbox], async () => {
+    await db.categories.put(newCat);
+    await db.outbox.put(outboxItem);
+  });
+
+  return newCat;
 }
 
 /**
@@ -166,4 +210,55 @@ export async function generateNextBillNo(explicitDeviceCode?: string): Promise<s
     });
     return formatBillNo(dateStr, device, nextSeq);
   });
+}
+
+/**
+ * Wipes all local bills, bill items, outbox queue, logs, and resets products & brands to pristine default state
+ */
+export async function resetAllLocalData(): Promise<void> {
+  await db.transaction(
+    'rw',
+    [
+      db.bills,
+      db.bill_items,
+      db.outbox,
+      db.activity_logs,
+      db.sync_meta,
+      db.device_sequence,
+      db.brands,
+      db.categories,
+      db.products,
+    ],
+    async () => {
+      // Clear operational transaction data
+      await db.bills.clear();
+      await db.bill_items.clear();
+      await db.outbox.clear();
+      await db.activity_logs.clear();
+      await db.sync_meta.clear();
+      await db.device_sequence.clear();
+
+      // Reset brands to clean defaults
+      await db.brands.clear();
+      await db.brands.bulkPut(DEFAULT_BRANDS);
+
+      // Reset categories to clean defaults
+      await db.categories.clear();
+      const catsToInsert: Category[] = DEFAULT_CATEGORIES.map((name, idx) => ({
+        id: `cat-${idx + 1}-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+        name,
+        is_active: true,
+        created_at: new Date().toISOString(),
+      }));
+      await db.categories.bulkPut(catsToInsert);
+
+      // Reset products to clean empty table
+      await db.products.clear();
+    }
+  );
+}
+
+// Make accessible on window object for convenience
+if (typeof window !== 'undefined') {
+  (window as any).resetAllLocalData = resetAllLocalData;
 }

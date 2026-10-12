@@ -61,4 +61,34 @@ describe('Bill Total Calculations', () => {
     expect(discount).toBe(0);
     expect(total).toBe(0);
   });
+
+  it('calculates brand-specific discounts accurately for mixed brand bills', () => {
+    const items = [
+      { qty: 2, unit_price: 500, brand: 'Standard' }, // 1000 Standard
+      { qty: 1, unit_price: 1000, brand: 'General' },  // 1000 General
+      { qty: 1, unit_price: 200, brand: 'Sony' },     // 200 Sony
+    ];
+
+    // Standard gets 70% off (= 700), General gets 20% off (= 200), Sony gets 0%
+    const brandDiscounts = {
+      Standard: 70,
+      General: 20,
+    };
+
+    const result = calculateBillTotals(items, 0, brandDiscounts);
+
+    expect(result.subtotal).toBe(2200);
+    expect(result.discount).toBe(900); // 700 + 200
+    expect(result.total).toBe(1300); // 2200 - 900
+    expect(result.brandTotals['Standard'].subtotal).toBe(1000);
+    expect(result.brandTotals['Standard'].discount).toBe(700);
+    expect(result.brandTotals['Standard'].net).toBe(300);
+    expect(result.brandTotals['General'].subtotal).toBe(1000);
+    expect(result.brandTotals['General'].discount).toBe(200);
+    expect(result.brandTotals['General'].net).toBe(800);
+    expect(result.brandTotals['Sony'].subtotal).toBe(200);
+    expect(result.brandTotals['Sony'].discount).toBe(0);
+    expect(result.brandTotals['Sony'].net).toBe(200);
+  });
 });
+

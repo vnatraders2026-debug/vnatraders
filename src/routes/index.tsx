@@ -6,6 +6,7 @@ import { LoginPage } from '@/features/auth/LoginPage';
 import { NewBillPage } from '@/features/billing/NewBillPage';
 import { BillsPage } from '@/features/bills/BillsPage';
 import { ProductsPage } from '@/features/products/ProductsPage';
+import { BrandsPage } from '@/features/brands/BrandsPage';
 import { SettingsPage } from '@/features/settings/SettingsPage';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -92,6 +93,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="billing" element={<NewBillPage />} />
         <Route path="bills" element={<BillsPage />} />
         <Route path="products" element={<ProductsPage />} />
+        <Route path="brands" element={<BrandsPage />} />
 
         {/* Admin Only Routes (Lazy Loaded) */}
         <Route

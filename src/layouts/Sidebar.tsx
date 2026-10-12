@@ -6,6 +6,7 @@ import {
   FilePlus2,
   Receipt,
   Boxes,
+  Tag,
   BarChart3,
   Users2,
   ScrollText,
@@ -18,9 +19,10 @@ import { VnaLogo } from '@/components/VnaLogo';
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  hidePermanent?: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent = false }) => {
   const { user, logout } = useAuth();
   const role = user?.role || 'staff';
 
@@ -28,6 +30,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { to: '/billing', label: 'New Bill', icon: FilePlus2 },
     { to: '/bills', label: 'Bills', icon: Receipt },
     { to: '/products', label: 'Products', icon: Boxes },
+    { to: '/brands', label: 'Brands', icon: Tag },
   ];
 
   const adminNavItems = [
@@ -35,6 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { to: '/billing', label: 'New Bill', icon: FilePlus2 },
     { to: '/bills', label: 'Bills', icon: Receipt },
     { to: '/products', label: 'Products', icon: Boxes },
+    { to: '/brands', label: 'Brands', icon: Tag },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
     { to: '/users', label: 'Users', icon: Users2 },
     { to: '/logs', label: 'Activity Logs', icon: ScrollText },
@@ -99,50 +103,54 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   return (
     <>
       {/* Desktop fixed sidebar (240px) */}
-      <aside className="hidden lg:block w-60 shrink-0 h-screen sticky top-0 z-30">
-        {content}
-      </aside>
+      {!hidePermanent && (
+        <aside className="hidden lg:block w-60 shrink-0 h-screen sticky top-0 z-30">
+          {content}
+        </aside>
+      )}
 
       {/* Tablet icon rail (72px) */}
-      <aside className="hidden sm:block lg:hidden w-16 shrink-0 h-screen sticky top-0 z-30 bg-surface border-r border-border">
-        <div className="flex flex-col h-full items-center py-3">
-          <div className="mb-6">
-            <VnaLogo size="sm" showText={false} />
+      {!hidePermanent && (
+        <aside className="hidden sm:block lg:hidden w-16 shrink-0 h-screen sticky top-0 z-30 bg-surface border-r border-border">
+          <div className="flex flex-col h-full items-center py-3">
+            <div className="mb-6">
+              <VnaLogo size="sm" showText={false} />
+            </div>
+            <div className="flex-1 space-y-2 w-full px-2">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    title={item.label}
+                    className={({ isActive }) =>
+                      `flex items-center justify-center w-full h-11 rounded transition-colors ${
+                        isActive
+                          ? 'bg-accent-light text-accent border-l-[3px] border-accent'
+                          : 'text-text-muted hover:text-text hover:bg-background border-l-[3px] border-transparent'
+                      }`
+                    }
+                  >
+                    <Icon size={20} />
+                  </NavLink>
+                );
+              })}
+            </div>
+            <button
+              onClick={logout}
+              title="Sign Out"
+              className="w-11 h-11 flex items-center justify-center rounded text-text-muted hover:text-danger hover:bg-danger-light"
+            >
+              <LogOut size={18} />
+            </button>
           </div>
-          <div className="flex-1 space-y-2 w-full px-2">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  title={item.label}
-                  className={({ isActive }) =>
-                    `flex items-center justify-center w-full h-11 rounded transition-colors ${
-                      isActive
-                        ? 'bg-accent-light text-accent border-l-[3px] border-accent'
-                        : 'text-text-muted hover:text-text hover:bg-background border-l-[3px] border-transparent'
-                    }`
-                  }
-                >
-                  <Icon size={20} />
-                </NavLink>
-              );
-            })}
-          </div>
-          <button
-            onClick={logout}
-            title="Sign Out"
-            className="w-11 h-11 flex items-center justify-center rounded text-text-muted hover:text-danger hover:bg-danger-light"
-          >
-            <LogOut size={18} />
-          </button>
-        </div>
-      </aside>
+        </aside>
+      )}
 
-      {/* Mobile drawer overlay */}
+      {/* Drawer overlay (active when isOpen is true, on mobile or when hidePermanent is active on desktop) */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className={`fixed inset-0 z-50 ${hidePermanent ? '' : 'lg:hidden'}`}>
           <div
             className="fixed inset-0 bg-black/40 transition-opacity"
             onClick={onClose}

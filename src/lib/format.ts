@@ -129,28 +129,86 @@ export function formatBillNo(dateStr: string, deviceCode: string, sequence: numb
   return `${dateStr}-${cleanDevice}-${seqPadded}`;
 }
 
+export interface BrandTotalBreakdown {
+  subtotal: number;
+  discountPercent: number;
+  discount: number;
+  net: number;
+}
+
+export interface BillTotalsResult {
+  subtotal: number;
+  discountPercent: number;
+  discount: number;
+  total: number;
+  brandTotals: Record<string, BrandTotalBreakdown>;
+}
+
 /**
- * Compute bill totals with percentage discount
+ * Compute bill totals with percentage discount, supporting brand-wise discounts
  */
 export function calculateBillTotals(
-  items: Array<{ qty: number; unit_price: number }>,
-  discountPercent: number = 0
-): { subtotal: number; discountPercent: number; discount: number; total: number } {
-  const rawSubtotal = items.reduce((acc, item) => {
+  items: Array<{ qty: number; unit_price: number; brand?: string }>,
+  discountPercent: number = 0,
+  brandDiscounts?: Record<string, number>
+): BillTotalsResult {
+  const brandSubtotals: Record<string, number> = {};
+
+  items.forEach((item) => {
     const qty = Math.max(0, item.qty || 0);
     const price = Math.max(0, item.unit_price || 0);
-    return acc + Math.round(qty * price * 100) / 100;
-  }, 0);
+    const lineTotal = Math.round(qty * price * 100) / 100;
+    const brand = (item.brand || 'Standard').trim() || 'Standard';
+    brandSubtotals[brand] = (brandSubtotals[brand] || 0) + lineTotal;
+  });
 
+  const rawSubtotal = Object.values(brandSubtotals).reduce((sum, v) => sum + v, 0);
   const subtotal = Math.round(rawSubtotal * 100) / 100;
-  const validPercent = Math.max(0, Math.min(100, Math.round((discountPercent || 0) * 100) / 100));
-  const discount = Math.round(((subtotal * validPercent) / 100) * 100) / 100;
-  const total = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
+
+  const hasBrandDiscounts =
+    brandDiscounts &&
+    Object.keys(brandDiscounts).length > 0 &&
+    Object.values(brandDiscounts).some((pct) => pct > 0);
+
+  const brandTotals: Record<string, BrandTotalBreakdown> = {};
+  let totalDiscount = 0;
+
+  if (hasBrandDiscounts) {
+    Object.entries(brandSubtotals).forEach(([brand, bSub]) => {
+      const bPct = Math.max(0, Math.min(100, brandDiscounts[brand] || 0));
+      const bDisc = Math.round(((bSub * bPct) / 100) * 100) / 100;
+      totalDiscount += bDisc;
+      brandTotals[brand] = {
+        subtotal: Math.round(bSub * 100) / 100,
+        discountPercent: bPct,
+        discount: bDisc,
+        net: Math.max(0, Math.round((bSub - bDisc) * 100) / 100),
+      };
+    });
+  } else {
+    const validPercent = Math.max(0, Math.min(100, Math.round((discountPercent || 0) * 100) / 100));
+    totalDiscount = Math.round(((subtotal * validPercent) / 100) * 100) / 100;
+    Object.entries(brandSubtotals).forEach(([brand, bSub]) => {
+      const bDisc = Math.round(((bSub * validPercent) / 100) * 100) / 100;
+      brandTotals[brand] = {
+        subtotal: Math.round(bSub * 100) / 100,
+        discountPercent: validPercent,
+        discount: bDisc,
+        net: Math.max(0, Math.round((bSub - bDisc) * 100) / 100),
+      };
+    });
+  }
+
+  const finalDiscount = Math.min(subtotal, Math.round(totalDiscount * 100) / 100);
+  const total = Math.max(0, Math.round((subtotal - finalDiscount) * 100) / 100);
+  const effectivePercent =
+    subtotal > 0 ? Math.round((finalDiscount / subtotal) * 10000) / 100 : 0;
 
   return {
     subtotal,
-    discountPercent: validPercent,
-    discount,
+    discountPercent: hasBrandDiscounts ? effectivePercent : Math.max(0, Math.min(100, discountPercent)),
+    discount: finalDiscount,
     total,
+    brandTotals,
   };
 }

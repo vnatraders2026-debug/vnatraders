@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { db, getShopSettings, saveShopSettings } from '@/db';
+import { db, getShopSettings, saveShopSettings, resetAllLocalData } from '@/db';
 import { ShopSettings } from '@/types';
 import { useSync } from '@/sync/useSync';
 import { formatISTDate } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { Dialog } from '@/components/ui/Dialog';
 import { useToast } from '@/components/ui/Toast';
+import { useCartStore } from '@/features/billing/store';
 import {
   Store,
   Printer,
@@ -31,6 +33,25 @@ export const SettingsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>('-');
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  const handleConfirmReset = async () => {
+    setIsResetting(true);
+    try {
+      await resetAllLocalData();
+      useCartStore.getState().clearCart();
+      toast('All local data cleared and reset successfully!', 'success');
+      setIsResetModalOpen(false);
+      setTimeout(() => {
+        window.location.href = '/billing';
+      }, 800);
+    } catch (err: any) {
+      toast(`Reset failed: ${err.message}`, 'error');
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   useEffect(() => {
     async function load() {
@@ -241,6 +262,43 @@ export const SettingsPage: React.FC = () => {
           </Button>
         </div>
       </div>
+
+        
+      {/* Confirmation Dialog */}
+      <Dialog
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        title="Confirm Reset All Local Data"
+      >
+        <div className="space-y-4 pt-2">
+          <p className="text-sm text-text">
+            Are you sure you want to wipe all local data? This will:
+          </p>
+          <ul className="text-xs text-text-muted list-disc list-inside space-y-1">
+            <li>Delete all local bills and line items</li>
+            <li>Clear the pending sync outbox queue</li>
+            <li>Reset brands to default (<strong>Standard</strong> & <strong>General</strong>)</li>
+            <li>Re-seed pristine default cracker catalog with accurate brands</li>
+          </ul>
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-border">
+            <Button
+              variant="secondary"
+              onClick={() => setIsResetModalOpen(false)}
+              disabled={isResetting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleConfirmReset}
+              disabled={isResetting}
+            >
+              {isResetting ? 'Resetting...' : 'Yes, Wipe & Reset Everything'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 };
