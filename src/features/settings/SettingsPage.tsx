@@ -9,12 +9,17 @@ import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { useToast } from '@/components/ui/Toast';
 import { useCartStore } from '@/features/billing/store';
+import { directPrinterService, PrinterStatus } from '@/lib/printer/directPrinterService';
 import {
   Store,
   Printer,
   RefreshCw,
   HardDriveDownload,
   Save,
+  Bluetooth,
+  Usb,
+  Zap,
+  CheckCircle2,
 } from 'lucide-react';
 
 export const SettingsPage: React.FC = () => {
@@ -50,6 +55,62 @@ export const SettingsPage: React.FC = () => {
       toast(`Reset failed: ${err.message}`, 'error');
     } finally {
       setIsResetting(false);
+    }
+  };
+
+  const [printerStatus, setPrinterStatus] = useState<PrinterStatus>(directPrinterService.getStatus());
+  const [isConnectingBluetooth, setIsConnectingBluetooth] = useState(false);
+  const [isConnectingSerial, setIsConnectingSerial] = useState(false);
+  const [isTestingPrint, setIsTestingPrint] = useState(false);
+
+  useEffect(() => {
+    return directPrinterService.subscribe((s) => {
+      setPrinterStatus(s);
+    });
+  }, []);
+
+  const handleConnectBluetooth = async () => {
+    setIsConnectingBluetooth(true);
+    try {
+      const name = await directPrinterService.connectBluetooth();
+      toast(`Successfully connected to ${name}! Ready for 1-click direct print.`, 'success');
+    } catch (err: any) {
+      if (!err.message?.includes('User cancelled')) {
+        toast(`Bluetooth connection notice: ${err.message}`, 'error');
+      }
+    } finally {
+      setIsConnectingBluetooth(false);
+    }
+  };
+
+  const handleConnectSerial = async () => {
+    setIsConnectingSerial(true);
+    try {
+      const name = await directPrinterService.connectSerial(9600);
+      toast(`Successfully connected to ${name}! Ready for 1-click direct print.`, 'success');
+    } catch (err: any) {
+      if (!err.message?.includes('User cancelled') && !err.message?.includes('No port selected')) {
+        toast(`USB/Serial connection notice: ${err.message}`, 'error');
+      }
+    } finally {
+      setIsConnectingSerial(false);
+    }
+  };
+
+  const handleDisconnectPrinter = async () => {
+    await directPrinterService.disconnect();
+    toast('Direct thermal printer disconnected.', 'info');
+  };
+
+  const handleTestDirectPrint = async () => {
+    setIsTestingPrint(true);
+    try {
+      await directPrinterService.printTest(settings);
+      toast('Test receipt sent directly to printer successfully!', 'success');
+    } catch (err: any) {
+      toast(`Direct test print failed: ${err.message}`, 'error');
+    } finally {
+      setIsTestingPrint(false);
     }
   };
 
@@ -226,6 +287,140 @@ export const SettingsPage: React.FC = () => {
               />
               <div className="w-11 h-6 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
             </label>
+          </div>
+        </div>
+
+        {/* DIRECT THERMAL PRINTER HARDWARE INTEGRATION */}
+        <div className="bg-surface border border-border rounded p-5 space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Zap size={18} className="text-accent" />
+              <h2 className="text-sm font-semibold text-text">Direct Thermal Printer Integration</h2>
+            </div>
+            {printerStatus.isConnected ? (
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-300 dark:border-emerald-800">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Connected: {printerStatus.deviceName}</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs text-text-muted bg-background px-2.5 py-1 rounded border border-border">
+                <span className="w-2 h-2 rounded-full bg-text-muted" />
+                <span>No Direct Printer Connected</span>
+              </span>
+            )}
+          </div>
+
+          <p className="text-xs text-text-muted leading-relaxed">
+            Connect directly to an 80mm or 58mm thermal receipt printer via <strong>Wireless Bluetooth</strong> or <strong>USB / COM cable</strong> to enable 1-click silent direct printing that bypasses the browser print dialog completely.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            {/* Bluetooth Option */}
+            <div className="p-3.5 border border-border rounded bg-background flex flex-col justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 font-semibold text-xs text-text">
+                  <Bluetooth size={16} className="text-blue-500" />
+                  <span>Wireless Bluetooth Thermal Printer</span>
+                </div>
+                <p className="text-[11px] text-text-muted">
+                  Pairs with portable and desktop Bluetooth POS printers (TVS, Everycom, NGX, POS-80/58).
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant={printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected ? 'secondary' : 'primary'}
+                size="sm"
+                onClick={handleConnectBluetooth}
+                disabled={isConnectingBluetooth}
+                className="w-full text-xs"
+              >
+                <Bluetooth size={14} />
+                <span>
+                  {isConnectingBluetooth
+                    ? 'Pairing...'
+                    : printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
+                    ? 'Re-Pair Bluetooth Printer'
+                    : 'Connect Bluetooth Printer'}
+                </span>
+              </Button>
+            </div>
+
+            {/* USB / Serial Option */}
+            <div className="p-3.5 border border-border rounded bg-background flex flex-col justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 font-semibold text-xs text-text">
+                  <Usb size={16} className="text-emerald-500" />
+                  <span>USB / Serial Cable Thermal Printer</span>
+                </div>
+                <p className="text-[11px] text-text-muted">
+                  Connects to desktop USB POS thermal receipt printers via Web Serial.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant={printerStatus.connectionType === 'serial' && printerStatus.isConnected ? 'secondary' : 'primary'}
+                size="sm"
+                onClick={handleConnectSerial}
+                disabled={isConnectingSerial}
+                className="w-full text-xs"
+              >
+                <Usb size={14} />
+                <span>
+                  {isConnectingSerial
+                    ? 'Connecting...'
+                    : printerStatus.connectionType === 'serial' && printerStatus.isConnected
+                    ? 'Re-Select USB Printer'
+                    : 'Connect USB Printer'}
+                </span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Test & Disconnect Actions */}
+          {printerStatus.isConnected && (
+            <div className="pt-2 border-t border-border flex items-center justify-between">
+              <span className="text-xs text-text font-medium flex items-center gap-1.5">
+                <CheckCircle2 size={15} className="text-emerald-500" />
+                <span>Active via {printerStatus.connectionType.toUpperCase()} ({printerStatus.deviceName})</span>
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleTestDirectPrint}
+                  disabled={isTestingPrint}
+                  className="text-xs"
+                >
+                  <Zap size={14} className="text-accent" />
+                  <span>{isTestingPrint ? 'Testing...' : 'Test Direct Print'}</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  onClick={handleDisconnectPrinter}
+                  className="text-xs"
+                >
+                  Disconnect
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Silent Kiosk Printing Note */}
+          <div className="p-3 bg-accent-light/40 border border-accent/30 rounded text-xs text-text space-y-1">
+            <span className="font-semibold text-accent block flex items-center gap-1">
+              <Zap size={13} />
+              <span>Pro POS Tip: Chrome Kiosk Silent Printing</span>
+            </span>
+            <p className="text-[11px] text-text-muted leading-relaxed">
+              For billing counters with standard Windows thermal printer drivers, launch Chrome with{' '}
+              <code className="bg-background px-1.5 py-0.5 rounded font-mono text-[10px] text-text border border-border">
+                --kiosk --kiosk-printing
+              </code>
+              . The terminal will print silently to your default thermal printer with zero popup dialogs!
+            </p>
           </div>
         </div>
 

@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Bill, BillItem, ShopSettings, Profile } from '@/types';
 import { checkBillEditPermission, formatRemainingTime } from '@/lib/permissions';
-import { Printer, PlusCircle, Edit3, X, MessageSquare } from 'lucide-react';
+import { Printer, PlusCircle, Edit3, X, MessageSquare, Bluetooth, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { useToast } from '@/components/ui/Toast';
+import { directPrinterService, PrinterStatus } from '@/lib/printer/directPrinterService';
 import { ReceiptCard } from './ReceiptCard';
 import { WhatsAppModal } from './WhatsAppModal';
 
@@ -28,8 +30,17 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   onEditBill,
   onClose,
 }) => {
+  const { toast } = useToast();
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
+  const [printerStatus, setPrinterStatus] = useState<PrinterStatus>(directPrinterService.getStatus());
+  const [isDirectPrinting, setIsDirectPrinting] = useState(false);
+
+  useEffect(() => {
+    return directPrinterService.subscribe((s) => {
+      setPrinterStatus(s);
+    });
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -38,21 +49,45 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  const handlePrint = async () => {
+    if (directPrinterService.isConnected()) {
+      setIsDirectPrinting(true);
+      try {
+        const res = await directPrinterService.printBillDirect(bill, items, settings);
+        toast(`Directly printed to ${res.printerName || 'Thermal POS'}!`, 'success');
+        return;
+      } catch (err: any) {
+        toast(`Direct printer error: ${err.message}. Falling back to browser print dialog.`, 'warning');
+      } finally {
+        setIsDirectPrinting(false);
+      }
+    }
+    // Fallback to standard browser print if no direct printer is active
+    window.print();
+  };
+
   // Automatic thermal print on save
   useEffect(() => {
     if (autoPrint) {
       const printTimer = setTimeout(() => {
-        window.print();
+        handlePrint();
       }, 350);
       return () => clearTimeout(printTimer);
     }
   }, [autoPrint]);
 
-  const editPermission = checkBillEditPermission(bill, currentUser, currentTimeMs);
-
-  const handlePrint = () => {
-    window.print();
+  const handleConnectDirectBluetooth = async () => {
+    try {
+      const name = await directPrinterService.connectBluetooth();
+      toast(`Connected to ${name}! Ready for direct print.`, 'success');
+    } catch (err: any) {
+      if (!err.message?.includes('User cancelled')) {
+        toast(err.message || 'Bluetooth connection failed', 'error');
+      }
+    }
   };
+
+  const editPermission = checkBillEditPermission(bill, currentUser, currentTimeMs);
 
   return createPortal(
     <>
@@ -68,13 +103,31 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <h2 className="text-base font-bold text-text">Bill Receipt</h2>
               <p className="text-xs text-text-muted">{bill.bill_no}</p>
             </div>
-            <button
-              onClick={onClose}
-              className="p-1.5 text-text-muted hover:text-text rounded hover:bg-background"
-              aria-label="Close receipt"
-            >
-              <X size={18} />
-            </button>
+            <div className="flex items-center gap-2">
+              {printerStatus.isConnected ? (
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="truncate max-w-[140px]">Direct: {printerStatus.deviceName}</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleConnectDirectBluetooth}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent-hover bg-accent-light px-2 py-0.5 rounded border border-accent/30 transition-colors"
+                  title="Connect wireless Bluetooth thermal printer for instant direct print"
+                >
+                  <Bluetooth size={12} />
+                  <span>Connect Direct</span>
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-1.5 text-text-muted hover:text-text rounded hover:bg-background"
+                aria-label="Close receipt"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           {/* Printable Receipt Paper Container */}
@@ -103,9 +156,16 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
 
             <div className="grid grid-cols-4 gap-2">
-              <Button variant="primary" onClick={handlePrint} size="sm">
-                <Printer size={15} />
-                <span>Print</span>
+              <Button
+                variant="primary"
+                onClick={handlePrint}
+                size="sm"
+                disabled={isDirectPrinting}
+                className={printerStatus.isConnected ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}
+                title={printerStatus.isConnected ? 'Direct instant thermal print (Zero dialog)' : 'Print receipt'}
+              >
+                {printerStatus.isConnected ? <Zap size={15} /> : <Printer size={15} />}
+                <span>{isDirectPrinting ? 'Printing...' : printerStatus.isConnected ? 'Direct Print' : 'Print'}</span>
               </Button>
 
               <Button
