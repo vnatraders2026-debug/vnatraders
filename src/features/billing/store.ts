@@ -4,6 +4,7 @@ import { calculateBillTotals, BillTotalsResult } from '@/lib/format';
 import { db, generateNextBillNo } from '@/db';
 import { syncService } from '@/sync/syncService';
 import { generateUUID } from '@/lib/uuid';
+import { logActivity } from '@/lib/activityLogger';
 
 export interface CartItem {
   id: string; // client temporary or bill_item id
@@ -289,17 +290,38 @@ export const useCartStore = create<CartState>((set, get) => ({
       await db.bill_items.bulkPut(billItemsRecords);
       await db.outbox.put(outboxRecord);
 
-      // Decrement local product stock
+      // Decrement local product stock and queue outbox item for Supabase cloud sync
       for (const item of items) {
         if (item.product_id) {
           const prod = await db.products.get(item.product_id);
           if (prod) {
             const newStock = Math.max(0, prod.stock - item.qty);
-            await db.products.update(item.product_id, { stock: newStock });
+            const updatedProd: Product = { ...prod, stock: newStock, updated_at: nowIso };
+            await db.products.update(item.product_id, { stock: newStock, updated_at: nowIso });
+            await db.outbox.put({
+              id: generateUUID(),
+              entity: 'products',
+              op: 'update',
+              payload: updatedProd,
+              status: 'pending',
+              attempts: 0,
+              created_at: nowIso,
+            });
           }
         }
       }
     });
+
+    // Record activity audit log
+    logActivity({
+      userId: currentUser?.id,
+      userName: currentUser?.full_name || currentUser?.email,
+      action: isEditing ? 'UPDATE' : 'INSERT',
+      entity: 'bills',
+      entityId: billId,
+      summary: `${isEditing ? 'Edited' : 'Created'} bill ${billNo} for ₹${total} (${payment_mode.toUpperCase()})`,
+      newData: billRecord,
+    }).catch(console.warn);
 
     // Reset cart
     get().clearCart();

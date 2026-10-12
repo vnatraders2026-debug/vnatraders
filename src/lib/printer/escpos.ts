@@ -43,30 +43,7 @@ function padColumns(left: string, right: string, width = 38): string {
 }
 
 
-/**
- * Wraps text into lines of at most maxWidth characters without breaking words
- */
-function wrapText(text: string, maxWidth: number): string[] {
-  if (!text || text.length <= maxWidth) return [text || ''];
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let current = '';
 
-  for (const w of words) {
-    if (!current) {
-      current = w;
-    } else if ((current + ' ' + w).length <= maxWidth) {
-      current += ' ' + w;
-    } else {
-      lines.push(current);
-      current = w;
-    }
-  }
-  if (current) {
-    lines.push(current);
-  }
-  return lines;
-}
 
 function tableRow(item: string, qty: string, rate: string, total: string, width: number): string {
   if (width <= 38) {
@@ -147,15 +124,15 @@ export function buildEscPosReceipt(
   // 5. Divider
   bytes.push(...line(divider));
 
-  // 6. Column Headers
-  bytes.push(...ESCPOS.ALIGN_CENTER);
+  // 6. Column Headers (Left aligned like all standard retail bills)
+  bytes.push(...ESCPOS.ALIGN_LEFT);
   bytes.push(...ESCPOS.BOLD_ON);
   bytes.push(...line(tableRow('Item', 'Qty', 'Rate', 'Total', width)));
   bytes.push(...ESCPOS.BOLD_OFF);
   bytes.push(...line(divider));
 
-  // 7. Bill Items: Show full item name! If long, wrap to next line cleanly so it never overlaps numbers.
-  bytes.push(...ESCPOS.ALIGN_CENTER);
+  // 7. Bill Items: Left aligned. First part of item name + Qty + Rate + Total on line 1, remaining item text on next line.
+  bytes.push(...ESCPOS.ALIGN_LEFT);
   const itemColWidth = is80mm ? 22 : 16;
   const qtyWidth = 4;
   const rateWidth = is80mm ? 8 : 7;
@@ -166,18 +143,19 @@ export function buildEscPosReceipt(
     const rateStr = it.unit_price.toFixed(2);
     const qtyStr = it.qty.toString();
 
-    if (it.product_name.length <= itemColWidth) {
-      // Short name: fits on single row
-      const row = `${it.product_name.padEnd(itemColWidth)} ${qtyStr.padStart(qtyWidth)} ${rateStr.padStart(rateWidth)} ${totalStr.padStart(totalWidth)}`;
-      bytes.push(...line(row));
-    } else {
-      // Long name: Print full name on its line(s), then numbers on the next line aligned under columns
-      const nameLines = wrapText(it.product_name, width);
-      for (const nl of nameLines) {
-        bytes.push(...line(nl));
+    // Line 1: Item name (first part) + Qty + Rate + Total on the SAME line
+    const firstPart = it.product_name.slice(0, itemColWidth).padEnd(itemColWidth, ' ');
+    const firstRow = `${firstPart} ${qtyStr.padStart(qtyWidth, ' ')} ${rateStr.padStart(rateWidth, ' ')} ${totalStr.padStart(totalWidth, ' ')}`;
+    bytes.push(...line(firstRow));
+
+    // If item name exceeds itemColWidth, remaining text goes to the next line(s)
+    if (it.product_name.length > itemColWidth) {
+      let remaining = it.product_name.slice(itemColWidth).trim();
+      while (remaining.length > 0) {
+        const chunk = remaining.slice(0, width - 2);
+        remaining = remaining.slice(width - 2).trim();
+        bytes.push(...line(`  ${chunk}`));
       }
-      const numRow = `${''.padEnd(itemColWidth)} ${qtyStr.padStart(qtyWidth)} ${rateStr.padStart(rateWidth)} ${totalStr.padStart(totalWidth)}`;
-      bytes.push(...line(numRow));
     }
   }
 

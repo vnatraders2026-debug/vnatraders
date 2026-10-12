@@ -259,8 +259,35 @@ class SyncService {
       const { error } = await supabase.from('bill_items').upsert(sanitized, { onConflict: 'id' });
       if (error) throw new Error(`Bill item sync error: ${error.message}`);
     } else if (item.entity === 'products') {
-      const { id, code, name, category, unit, price, stock, is_active } = item.payload;
-      const { error } = await supabase.from('products').upsert({ id, code, name, category, unit, price, stock, is_active }, { onConflict: 'id' });
+      const { id, code, name, brand, category, unit, price, stock, is_active } = item.payload;
+      const cleanProd: Record<string, any> = {
+        code: (code || '').toUpperCase().trim(),
+        name: (name || '').trim(),
+        brand: (brand || 'Standard').trim(),
+        category: (category || 'General').trim(),
+        unit: unit || 'box',
+        price: Math.max(0, Number(price) || 0),
+        stock: Math.max(0, Number(stock) || 0),
+        is_active: is_active ?? true,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        cleanProd.id = id;
+      }
+
+      // Upsert by onConflict: code (business unique key)
+      let { error } = await supabase.from('products').upsert(cleanProd, { onConflict: 'code' });
+
+      // Fallback: update by code directly if onConflict had constraint mismatch
+      if (error) {
+        const { error: updateErr } = await supabase
+          .from('products')
+          .update(cleanProd)
+          .eq('code', cleanProd.code);
+        error = updateErr;
+      }
+
       if (error) throw new Error(`Product sync error: ${error.message}`);
     } else if (item.entity === 'brands') {
       const { id, name, is_active } = item.payload;
@@ -371,6 +398,24 @@ class SyncService {
       }
     } catch {
       // Table might not exist yet if migration 008 has not been applied
+    }
+
+    // 5. Pull Activity Logs from Cloud
+    try {
+      const { data: remoteLogs, error: logsErr } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (!logsErr && remoteLogs && remoteLogs.length > 0) {
+        await db.activity_logs.bulkPut(remoteLogs);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('activity-logs-synced'));
+        }
+      }
+    } catch (logsErr) {
+      console.warn('Activity logs background sync notice:', logsErr);
     }
   }
 

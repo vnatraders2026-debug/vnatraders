@@ -17,6 +17,8 @@ import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/features/auth/AuthContext';
+import { logActivity } from '@/lib/activityLogger';
 import { Search, Plus, Download, Upload, Edit, EyeOff, Eye, FileSpreadsheet, Tag } from 'lucide-react';
 
 const productSchema = z.object({
@@ -32,6 +34,7 @@ const productSchema = z.object({
 type ProductFormData = z.infer<typeof productSchema>;
 
 export const ProductsPage: React.FC = () => {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -242,6 +245,25 @@ export const ProductsPage: React.FC = () => {
     updateProductInIndex(productRecord);
     syncService.updatePendingCount();
 
+    // Audit log
+    logActivity({
+      userId: user?.id,
+      userName: user?.full_name || user?.email,
+      action: editingProduct ? 'UPDATE' : 'INSERT',
+      entity: 'products',
+      entityId: productId,
+      summary: editingProduct
+        ? `Updated product ${productRecord.name} (${productRecord.code}) - Stock: ${productRecord.stock}, Price: Rs.${productRecord.price}`
+        : `Added new product ${productRecord.name} (${productRecord.code}) with initial stock ${productRecord.stock}`,
+      oldData: editingProduct,
+      newData: productRecord,
+    }).catch(console.warn);
+
+    // Immediately trigger cloud sync to Supabase
+    if (navigator.onLine) {
+      syncService.triggerSync().catch(console.warn);
+    }
+
     toast(editingProduct ? 'Product updated' : 'Product created', 'success');
     setIsDrawerOpen(false);
     loadData();
@@ -273,6 +295,21 @@ export const ProductsPage: React.FC = () => {
 
     updateProductInIndex(updatedRecord);
     syncService.updatePendingCount();
+
+    // Audit log
+    logActivity({
+      userId: user?.id,
+      userName: user?.full_name || user?.email,
+      action: 'UPDATE',
+      entity: 'products',
+      entityId: product.id,
+      summary: `${updatedStatus ? 'Activated' : 'Deactivated'} product ${product.name} (${product.code})`,
+    }).catch(console.warn);
+
+    // Immediately trigger cloud sync to Supabase
+    if (navigator.onLine) {
+      syncService.triggerSync().catch(console.warn);
+    }
 
     toast(
       updatedStatus ? `Reactivated ${product.name}` : `Deactivated ${product.name}`,
@@ -444,6 +481,20 @@ export const ProductsPage: React.FC = () => {
       }
 
       syncService.updatePendingCount();
+
+      logActivity({
+        userId: user?.id,
+        userName: user?.full_name || user?.email,
+        action: 'INSERT',
+        entity: 'products',
+        entityId: 'bulk_csv',
+        summary: `Imported / updated stock for ${recordsToPut.length} products via CSV`,
+      }).catch(console.warn);
+
+      if (navigator.onLine) {
+        syncService.triggerSync().catch(console.warn);
+      }
+
       toast(`Successfully imported ${recordsToPut.length} products`, 'success');
       setIsCsvModalOpen(false);
       setCsvPreviewData([]);

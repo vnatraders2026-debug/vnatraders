@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '@/db';
+import { supabase, isConfigured } from '@/lib/supabase';
 import { ActivityLog, Profile } from '@/types';
 import { formatISTDate } from '@/lib/format';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
@@ -7,12 +8,13 @@ import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 
 export const ActivityLogsPage: React.FC = () => {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Filters
   const [userFilter, setUserFilter] = useState('all');
@@ -24,19 +26,45 @@ export const ActivityLogsPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      try {
-        const allLogs = await db.activity_logs.orderBy('id').reverse().toArray();
-        const allProfiles = await db.profiles.toArray();
-        setLogs(allLogs);
-        setProfiles(allProfiles);
-      } finally {
-        setLoading(false);
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true);
+    else setIsRefreshing(true);
+
+    try {
+      // 1. Immediately read local Dexie logs
+      const localLogs = await db.activity_logs.orderBy('id').reverse().toArray();
+      const allProfiles = await db.profiles.toArray();
+      setLogs(localLogs);
+      setProfiles(allProfiles);
+
+      // 2. Fetch fresh activity logs from Supabase if online
+      if (isConfigured && navigator.onLine) {
+        const { data: cloudLogs, error } = await supabase
+          .from('activity_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(200);
+
+        if (!error && cloudLogs && cloudLogs.length > 0) {
+          await db.activity_logs.bulkPut(cloudLogs);
+          const mergedLogs = await db.activity_logs.orderBy('id').reverse().toArray();
+          setLogs(mergedLogs);
+        }
       }
+    } catch (err) {
+      console.warn('Activity logs load notice:', err);
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
     }
+  };
+
+  useEffect(() => {
     loadData();
+
+    const handleSync = () => loadData(true);
+    window.addEventListener('activity-logs-synced', handleSync);
+    return () => window.removeEventListener('activity-logs-synced', handleSync);
   }, []);
 
   const filteredLogs = useMemo(() => {
@@ -106,9 +134,22 @@ export const ActivityLogsPage: React.FC = () => {
     <div className="space-y-4">
       {/* Header and Filter Controls */}
       <div className="bg-surface border border-border rounded p-4 flex flex-col md:flex-row gap-3 items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-text">Audit Activity Logs</h2>
-          <p className="text-xs text-text-muted">Comprehensive immutable log of store activities</p>
+        <div className="flex items-center gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-text">Audit Activity Logs</h2>
+            <p className="text-xs text-text-muted">Comprehensive immutable log of store activities</p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => loadData(false)}
+            disabled={isRefreshing || loading}
+            className="flex items-center gap-1.5 text-xs py-1 px-2.5 h-8"
+            title="Refresh logs from cloud"
+          >
+            <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-accent' : ''} />
+            <span>{isRefreshing ? 'Syncing...' : 'Refresh'}</span>
+          </Button>
         </div>
 
         <div className="grid grid-cols-3 gap-2 w-full md:w-auto">
