@@ -1,5 +1,5 @@
 -- Migration 009: Activity Logs and Stock Sync Policies
--- VNA Crackers Sivakasi Billing System
+-- VNA Traders Billing System
 
 -- 1. Ensure public.activity_logs has proper RLS for both read and insert
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;

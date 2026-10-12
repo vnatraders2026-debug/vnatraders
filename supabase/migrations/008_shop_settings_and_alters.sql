@@ -25,11 +25,11 @@ ALTER TABLE public.products
 
 CREATE TABLE IF NOT EXISTS public.shop_settings (
     key TEXT PRIMARY KEY DEFAULT 'shop_settings',
-    shop_name TEXT NOT NULL DEFAULT 'VNA Crackers',
-    shop_address TEXT NOT NULL DEFAULT '142 Kakkan Road, Sivakasi, Tamil Nadu - 626123',
+    shop_name TEXT NOT NULL DEFAULT 'VNA Traders',
+    shop_address TEXT NOT NULL DEFAULT 'Jeermangalam, Hosur, Tamil Nadu - 635109',
     shop_phone TEXT NOT NULL DEFAULT '+91 94431 23456',
-    gst_no TEXT DEFAULT '33VNACK0000A1Z5',
-    receipt_footer TEXT DEFAULT 'Thank you for choosing VNA Crackers! Wishing you a bright and safe celebration.',
+    gst_no TEXT DEFAULT '33ACSPV5299F1Z5',
+    receipt_footer TEXT DEFAULT 'Thank you for choosing VNA Traders! Wishing you a bright and safe celebration.',
     paper_size TEXT NOT NULL DEFAULT '80mm' CHECK (paper_size IN ('80mm', '58mm', 'a4')),
     auto_print BOOLEAN NOT NULL DEFAULT true,
     device_code TEXT DEFAULT 'A',
@@ -93,11 +93,11 @@ INSERT INTO public.shop_settings (
 )
 VALUES (
     'shop_settings',
-    'VNA CRACKERS',                                           -- CHANGE SHOP NAME HERE
+    'VNA TRADERS',                                           -- CHANGE SHOP NAME HERE
     'Jeermangalam, Hosur, Tamil Nadu - 635109',               -- CHANGE ADDRESS HERE
     '+91 94431 23456',                                        -- CHANGE PHONE HERE
     '33ACSPV5299F1Z5',                                        -- CHANGE GST NUMBER HERE
-    'Thank you for choosing VNA Crackers! Wishing you a bright and safe celebration.', -- RECEIPT FOOTER
+    'Thank you for choosing VNA Traders! Wishing you a bright and safe celebration.', -- RECEIPT FOOTER
     '80mm',                                                   -- '80mm' or '58mm'
     true,                                                     -- true for auto-print on save
     'A',
@@ -113,12 +113,19 @@ ON CONFLICT (key) DO UPDATE SET
     auto_print = EXCLUDED.auto_print,
     updated_at = now();
 
+-- Ensure existing shop_settings is also updated to VNA TRADERS
+UPDATE public.shop_settings
+SET shop_name = 'VNA TRADERS',
+    receipt_footer = 'Thank you for choosing VNA Traders! Wishing you a bright and safe celebration.',
+    updated_at = now()
+WHERE key = 'shop_settings';
+
 -- -------------------------------------------------------------------------
 -- QUICK UPDATE TEMPLATES (Run these anytime to change individual fields):
 -- -------------------------------------------------------------------------
 
 -- Example 1: Update only Shop Name:
--- UPDATE public.shop_settings SET shop_name = 'VNA CRACKERS SIVAKASI', updated_at = now() WHERE key = 'shop_settings';
+-- UPDATE public.shop_settings SET shop_name = 'VNA TRADERS', updated_at = now() WHERE key = 'shop_settings';
 
 -- Example 2: Update Shop Phone & Address:
 -- UPDATE public.shop_settings SET shop_phone = '+91 98765 43210', shop_address = 'Hosur Main Road, Tamil Nadu', updated_at = now() WHERE key = 'shop_settings';

@@ -14,11 +14,11 @@ export function formatBillForWhatsApp(
   items: BillItem[],
   settings?: ShopSettings | null
 ): string {
-  const shopName = settings?.shop_name || 'VNA Crackers';
+  const shopName = settings?.shop_name || 'VNA Traders';
   const shopAddress = settings?.shop_address || '142 Kakkan Road, Sivakasi';
   const shopPhone = settings?.shop_phone || '';
   const gstNo = settings?.gst_no || '';
-  const footer = settings?.receipt_footer || 'Thank you for choosing VNA Crackers! Wishing you a bright celebration.';
+  const footer = settings?.receipt_footer || 'Thank you for choosing VNA Traders! Wishing you a bright celebration.';
 
   const lines: string[] = [];
 

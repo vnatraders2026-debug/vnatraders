@@ -1,5 +1,5 @@
 -- Migration 006: Cracker Categories
--- VNA Crackers Sivakasi Billing System
+-- VNA Traders Billing System
 
 -- 1. Create public.categories table
 CREATE TABLE IF NOT EXISTS public.categories (

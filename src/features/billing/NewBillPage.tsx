@@ -480,7 +480,7 @@ export const NewBillPage: React.FC = () => {
         <div className="md:hidden fixed inset-0 z-50 bg-surface flex flex-col">
           <div className="p-4 border-b border-border flex items-center justify-between">
             <div>
-              <h2 className="text-base font-bold text-text">VNA Crackers - Current Bill</h2>
+              <h2 className="text-base font-bold text-text">VNA Traders - Current Bill</h2>
               <p className="text-xs text-text-muted">{items.length} items added</p>
             </div>
             <button

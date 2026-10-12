@@ -361,7 +361,7 @@ export const ProductsPage: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `vna_crackers_products_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `vna_traders_products_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

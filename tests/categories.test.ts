@@ -75,7 +75,7 @@ describe('Cracker Categories & WhatsApp Integration', () => {
     ];
 
     const mockSettings: ShopSettings = {
-      shop_name: 'VNA Crackers',
+      shop_name: 'VNA Traders',
       shop_address: '142 Kakkan Road, Sivakasi',
       shop_phone: '+91 94431 23456',
       gst_no: '33VNACK0000A1Z5',
@@ -87,7 +87,7 @@ describe('Cracker Categories & WhatsApp Integration', () => {
     const text = formatBillForWhatsApp(mockBill, mockItems, mockSettings);
 
     // Verifies all items are present in the text
-    expect(text).toContain('VNA CRACKERS');
+    expect(text).toContain('VNA TRADERS');
     expect(text).toContain('261012-A-0005');
     expect(text).toContain('Murugan (9842123456)');
     expect(text).toContain('1. *10 cm Electric Sparklers* [Standard]');

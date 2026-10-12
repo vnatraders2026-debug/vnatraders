@@ -90,7 +90,7 @@ export function buildEscPosReceipt(
   bytes.push(...ESCPOS.ALIGN_CENTER);
   bytes.push(...ESCPOS.BOLD_ON);
   bytes.push(...ESCPOS.DOUBLE_SIZE_ON);
-  bytes.push(...line(settings.shop_name || 'VNA CRACKERS'));
+  bytes.push(...line(settings.shop_name || 'VNA TRADERS'));
   bytes.push(...ESCPOS.NORMAL_SIZE);
   bytes.push(...ESCPOS.BOLD_OFF);
 
@@ -206,7 +206,7 @@ export function buildEscPosReceipt(
   // 12. Footer Message (Center aligned)
   bytes.push(...ESCPOS.ALIGN_CENTER);
   bytes.push(0x0a);
-  const footerText = settings.receipt_footer || 'Thank you for choosing VNA Crackers!';
+  const footerText = settings.receipt_footer || 'Thank you for choosing VNA Traders!';
   bytes.push(...line(footerText));
 
   // 13. Paper Feed & Cut
@@ -229,7 +229,7 @@ export function buildTestReceipt(settings: ShopSettings, billedBy = 'Admin'): Ui
   bytes.push(...ESCPOS.ALIGN_CENTER);
   bytes.push(...ESCPOS.BOLD_ON);
   bytes.push(...ESCPOS.DOUBLE_SIZE_ON);
-  bytes.push(...line(settings.shop_name || 'VNA CRACKERS'));
+  bytes.push(...line(settings.shop_name || 'VNA TRADERS'));
   bytes.push(...ESCPOS.NORMAL_SIZE);
   bytes.push(...ESCPOS.BOLD_OFF);
   bytes.push(...line('THERMAL PRINTER TEST'));

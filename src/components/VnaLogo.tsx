@@ -63,7 +63,7 @@ export const VnaLogo: React.FC<VnaLogoProps> = ({
         <div className="flex flex-col leading-none">
           <div className="flex items-center gap-1.5">
             <span className={`font-black tracking-tight text-text ${textSizes[size]}`}>
-              VNA CRACKERS
+              VNA TRADERS
             </span>
           </div>
           <span className="text-[10px] uppercase font-semibold text-accent tracking-widest mt-0.5">

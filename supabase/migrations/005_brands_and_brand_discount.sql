@@ -1,5 +1,5 @@
 -- Migration 005: Brands Module and Brand Discounts
--- VNA Crackers Sivakasi Billing System
+-- VNA Traders Billing System
 
 -- 1. Create public.brands table
 CREATE TABLE IF NOT EXISTS public.brands (

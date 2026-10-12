@@ -21,7 +21,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   shop_address: 'Jeermangalam, Hosur, Tamil Nadu - 635109',
   shop_phone: '+91 94431 23456',
   gst_no: '33ACSPV5299F1Z5',
-  receipt_footer: 'Thank you for choosing VNA Crackers! Wishing you a bright and safe celebration.',
+  receipt_footer: 'Thank you for choosing VNA Traders! Wishing you a bright and safe celebration.',
   device_code: 'A',
   paper_size: '80mm',
   auto_print: true,
@@ -108,6 +108,8 @@ export async function initLocalDatabase(): Promise<void> {
   if (
     !currentSettings ||
     currentSettings.value?.shop_name === 'Sri Murugan Crackers' ||
+    currentSettings.value?.shop_name === 'VNA Crackers' ||
+    currentSettings.value?.shop_name === 'VNA CRACKERS' ||
     currentSettings.value?.shop_address?.includes('Sivakasi') ||
     currentSettings.value?.gst_no === '33VNACK0000A1Z5'
   ) {

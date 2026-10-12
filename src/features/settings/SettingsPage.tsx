@@ -196,7 +196,7 @@ export const SettingsPage: React.FC = () => {
               label="Retail Shop Name"
               value={settings.shop_name}
               onChange={(e) => setSettings({ ...settings, shop_name: e.target.value })}
-              placeholder="VNA Crackers"
+              placeholder="VNA Traders"
               required
             />
 
@@ -230,7 +230,7 @@ export const SettingsPage: React.FC = () => {
               label="Receipt Footer Notice"
               value={settings.receipt_footer}
               onChange={(e) => setSettings({ ...settings, receipt_footer: e.target.value })}
-              placeholder="Thank you for choosing VNA Crackers!"
+              placeholder="Thank you for choosing VNA Traders!"
             />
           </div>
         </div>

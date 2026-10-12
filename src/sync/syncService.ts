@@ -106,10 +106,17 @@ class SyncService {
         if (!session) {
           // Auto-authenticate with terminal credentials if session is not active
           try {
-            const { data: authData } = await supabase.auth.signInWithPassword({
-              email: 'admin@vnacrackers.com',
+            let { data: authData } = await supabase.auth.signInWithPassword({
+              email: 'admin@vnatraders.com',
               password: 'Admin@12345',
             });
+            if (!authData?.session) {
+              const retry = await supabase.auth.signInWithPassword({
+                email: 'admin@vnacrackers.com',
+                password: 'Admin@12345',
+              });
+              authData = retry.data;
+            }
             session = authData?.session || null;
           } catch (loginErr) {
             console.warn('Auto cloud authentication notice:', loginErr);
