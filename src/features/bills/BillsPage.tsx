@@ -529,6 +529,13 @@ export const BillsPage: React.FC = () => {
           items={viewingBill.items}
           settings={shopSettings}
           currentUser={user}
+          billedBy={
+            viewingBill.bill.created_by
+              ? profiles.get(viewingBill.bill.created_by)?.full_name ||
+                profiles.get(viewingBill.bill.created_by)?.email ||
+                (viewingBill.bill.created_by === user.id ? user.full_name || user.email : 'Staff')
+              : user.full_name || user.email || 'Admin'
+          }
           onNewBill={() => {
             setViewingBill(null);
             navigate('/billing');

@@ -51,7 +51,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  const billedUserName = currentUser?.full_name || currentUser?.email || 'Admin';
+  const billedUserName = billedBy || currentUser?.full_name || currentUser?.email || 'Admin';
 
   const handlePrint = async () => {
     if (directPrinterService.isConnected()) {
@@ -140,6 +140,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               bill={bill}
               items={items}
               settings={settings}
+              billedBy={billedUserName}
               id="receipt-print-area"
               className="w-full"
             />

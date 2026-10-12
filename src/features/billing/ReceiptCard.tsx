@@ -76,13 +76,13 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
         </thead>
         <tbody className="divide-y divide-black/30">
           {items.map((item, idx) => (
-            <tr key={idx} className="font-semibold">
-              <td className="py-1 pr-1 font-sans text-xs">
-                <span className="font-bold text-black leading-tight">{item.product_name}</span>
+            <tr key={idx} className="font-semibold align-top">
+              <td className="py-1 pr-1 font-sans text-xs break-words max-w-0 w-[45%]">
+                <span className="font-bold text-black leading-tight block">{item.product_name}</span>
               </td>
-              <td className="py-1 text-right tabular-nums text-black font-bold whitespace-nowrap px-1">{item.qty}</td>
-              <td className="py-1 text-right tabular-nums text-black font-bold whitespace-nowrap px-1">{formatNumber(item.unit_price)}</td>
-              <td className="py-1 text-right tabular-nums text-black font-black whitespace-nowrap pl-1">
+              <td className="py-1 text-right tabular-nums text-black font-bold whitespace-nowrap px-1 align-top">{item.qty}</td>
+              <td className="py-1 text-right tabular-nums text-black font-bold whitespace-nowrap px-1 align-top">{formatNumber(item.unit_price)}</td>
+              <td className="py-1 text-right tabular-nums text-black font-black whitespace-nowrap pl-1 align-top">
                 {formatNumber(item.line_total)}
               </td>
             </tr>
@@ -103,12 +103,20 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
           <div className="space-y-0.5 py-1 border-y border-dashed border-black text-[11px]">
             {Object.entries(bill.brand_discounts)
               .filter(([_, pct]) => pct > 0)
-              .map(([bName, bPct]) => (
-                <div key={bName} className="flex justify-between font-semibold">
-                  <span>{bName} Disc ({bPct}%):</span>
-                  <span className="tabular-nums font-mono">{bPct}% off</span>
-                </div>
-              ))}
+              .map(([bName, bPct]) => {
+                const bSub = items
+                  .filter((it) => (it.brand || 'Standard').toLowerCase() === bName.toLowerCase())
+                  .reduce((sum, it) => sum + it.line_total, 0);
+                const bDisc = bSub > 0 ? Math.round((bSub * bPct) / 100) : 0;
+                return (
+                  <div key={bName} className="flex justify-between font-semibold">
+                    <span>{bName} Disc ({bPct}%):</span>
+                    <span className="tabular-nums font-mono">
+                      {bDisc > 0 ? `- ${formatINR(bDisc)}` : `${bPct}% off`}
+                    </span>
+                  </div>
+                );
+              })}
             <div className="flex justify-between font-bold pt-0.5">
               <span>Total Discount:</span>
               <span className="tabular-nums font-mono">- {formatINR(bill.discount)}</span>
@@ -117,7 +125,7 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
         ) : bill.discount > 0 ? (
           <div className="flex justify-between">
             <span>
-              Discount{' '}
+              Standard Disc{' '}
               {bill.subtotal > 0
                 ? `(${Math.round((bill.discount / bill.subtotal) * 100)}%)`
                 : ''}:

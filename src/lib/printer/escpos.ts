@@ -42,10 +42,33 @@ function padColumns(left: string, right: string, width = 38): string {
   return leftClean + ' '.repeat(spaces) + right;
 }
 
+
 /**
- * Ensures table row completes on ONE SINGLE LINE without wrapping numbers
+ * Wraps text into lines of at most maxWidth characters without breaking words
  */
-function tableRow(item: string, qty: string, rate: string, total: string, width = 38): string {
+function wrapText(text: string, maxWidth: number): string[] {
+  if (!text || text.length <= maxWidth) return [text || ''];
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let current = '';
+
+  for (const w of words) {
+    if (!current) {
+      current = w;
+    } else if ((current + ' ' + w).length <= maxWidth) {
+      current += ' ' + w;
+    } else {
+      lines.push(current);
+      current = w;
+    }
+  }
+  if (current) {
+    lines.push(current);
+  }
+  return lines;
+}
+
+function tableRow(item: string, qty: string, rate: string, total: string, width: number): string {
   if (width <= 38) {
     // 58mm compact layout (38 chars total):
     // Item (16) + ' ' (1) + Qty (4) + ' ' (1) + Rate (7) + ' ' (1) + Total (8) = 38 chars
@@ -67,7 +90,8 @@ function tableRow(item: string, qty: string, rate: string, total: string, width 
 
 /**
  * Builds raw ESC/POS byte sequence for a bill
- * Center aligned structure, guaranteed 1-line item rows, with billedBy username at the end.
+ * Center aligned structure, full item name with clean next-line wrap, brand discount details,
+ * and billedBy username at the end.
  */
 export function buildEscPosReceipt(
   bill: Bill,
@@ -123,31 +147,62 @@ export function buildEscPosReceipt(
   // 5. Divider
   bytes.push(...line(divider));
 
-  // 6. Column Headers (One single complete line)
+  // 6. Column Headers
   bytes.push(...ESCPOS.ALIGN_CENTER);
   bytes.push(...ESCPOS.BOLD_ON);
   bytes.push(...line(tableRow('Item', 'Qty', 'Rate', 'Total', width)));
   bytes.push(...ESCPOS.BOLD_OFF);
   bytes.push(...line(divider));
 
-  // 7. Bill Items (Guaranteed 1 line per item, numbers never split)
+  // 7. Bill Items: Show full item name! If long, wrap to next line cleanly so it never overlaps numbers.
   bytes.push(...ESCPOS.ALIGN_CENTER);
+  const itemColWidth = is80mm ? 22 : 16;
+  const qtyWidth = 4;
+  const rateWidth = is80mm ? 8 : 7;
+  const totalWidth = is80mm ? 9 : 8;
+
   for (const it of items) {
     const totalStr = it.line_total.toFixed(2);
     const rateStr = it.unit_price.toFixed(2);
     const qtyStr = it.qty.toString();
 
-    bytes.push(...line(tableRow(it.product_name, qtyStr, rateStr, totalStr, width)));
+    if (it.product_name.length <= itemColWidth) {
+      // Short name: fits on single row
+      const row = `${it.product_name.padEnd(itemColWidth)} ${qtyStr.padStart(qtyWidth)} ${rateStr.padStart(rateWidth)} ${totalStr.padStart(totalWidth)}`;
+      bytes.push(...line(row));
+    } else {
+      // Long name: Print full name on its line(s), then numbers on the next line aligned under columns
+      const nameLines = wrapText(it.product_name, width);
+      for (const nl of nameLines) {
+        bytes.push(...line(nl));
+      }
+      const numRow = `${''.padEnd(itemColWidth)} ${qtyStr.padStart(qtyWidth)} ${rateStr.padStart(rateWidth)} ${totalStr.padStart(totalWidth)}`;
+      bytes.push(...line(numRow));
+    }
   }
 
   // 8. Divider
   bytes.push(...line(divider));
 
-  // 9. Subtotal & Discounts
+  // 9. Subtotal & Explicit Discount Breakdown (Standard, Others, etc.)
   bytes.push(...line(padColumns('Subtotal:', `Rs. ${bill.subtotal.toFixed(2)}`, width)));
 
-  if (bill.discount > 0) {
+  if (bill.brand_discounts && Object.entries(bill.brand_discounts).some(([_, pct]) => pct > 0)) {
+    for (const [bName, bPct] of Object.entries(bill.brand_discounts)) {
+      if (bPct > 0) {
+        const bSub = items
+          .filter((it) => (it.brand || 'Standard').toLowerCase() === bName.toLowerCase())
+          .reduce((sum, it) => sum + it.line_total, 0);
+        const bDisc = bSub > 0 ? Math.round((bSub * bPct) / 100) : 0;
+        const discVal = bDisc > 0 ? `- Rs. ${bDisc.toFixed(2)}` : `${bPct}% off`;
+        bytes.push(...line(padColumns(`${bName} Disc (${bPct}%):`, discVal, width)));
+      }
+    }
     bytes.push(...line(padColumns('Total Discount:', `- Rs. ${bill.discount.toFixed(2)}`, width)));
+  } else if (bill.discount > 0) {
+    const pct = bill.subtotal > 0 ? Math.round((bill.discount / bill.subtotal) * 100) : 0;
+    const label = pct > 0 ? `Standard Disc (${pct}%):` : 'Discount:';
+    bytes.push(...line(padColumns(label, `- Rs. ${bill.discount.toFixed(2)}`, width)));
   }
 
   // 10. Grand Total (Center aligned, Big Bold!)
