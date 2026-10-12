@@ -3,6 +3,7 @@ import { Product, PaymentMode, Bill, BillItem, OutboxItem, Profile } from '@/typ
 import { calculateBillTotals, BillTotalsResult } from '@/lib/format';
 import { db, generateNextBillNo } from '@/db';
 import { syncService } from '@/sync/syncService';
+import { generateUUID } from '@/lib/uuid';
 
 export interface CartItem {
   id: string; // client temporary or bill_item id
@@ -76,7 +77,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         return { items: updatedItems };
       } else {
         const newItem: CartItem = {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           product_id: product.id,
           code: product.code,
           product_name: product.name,
@@ -230,7 +231,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     const nowIso = new Date().toISOString();
 
     const isEditing = Boolean(editingBillId);
-    const billId = editingBillId || crypto.randomUUID();
+    const billId = editingBillId || generateUUID();
     const billNo = isEditing && editingBillNo ? editingBillNo : await generateNextBillNo();
 
     const billRecord: Bill = {
@@ -255,7 +256,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     }
 
     const billItemsRecords: BillItem[] = items.map((item) => ({
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       bill_id: billId,
       product_id: item.product_id || null,
       product_name: item.product_name,
@@ -266,7 +267,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     }));
 
     const outboxRecord: OutboxItem = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       entity: 'bills',
       op: isEditing ? 'update' : 'insert',
       payload: {

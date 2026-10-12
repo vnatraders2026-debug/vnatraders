@@ -13,6 +13,7 @@ import {
   DeviceSequence,
 } from '@/types';
 import { getISTYYMMDD, formatBillNo } from '@/lib/format';
+import { generateUUID } from '@/lib/uuid';
 
 export const DEFAULT_SETTINGS: ShopSettings = {
   shop_name: 'VNA Crackers',
@@ -149,14 +150,14 @@ export async function addCategory(name: string): Promise<Category> {
   }
 
   const newCat: Category = {
-    id: `cat-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
+    id: `cat-${Date.now()}-${generateUUID().slice(0, 8)}`,
     name: trimmed,
     is_active: true,
     created_at: new Date().toISOString(),
   };
 
   const outboxItem: OutboxItem = {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     entity: 'categories',
     op: 'insert',
     payload: newCat,

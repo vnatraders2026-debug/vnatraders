@@ -12,6 +12,7 @@ import { TableSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { UserPlus, KeyRound, Shield, EyeOff, Eye } from 'lucide-react';
 import { supabase, isConfigured } from '@/lib/supabase';
+import { generateUUID } from '@/lib/uuid';
 
 export const UsersPage: React.FC = () => {
   const { user: currentUser } = useAuth();
@@ -72,7 +73,7 @@ export const UsersPage: React.FC = () => {
 
     const cleanEmail = createData.email.trim().toLowerCase();
     const cleanName = createData.full_name.trim();
-    let assignedId = crypto.randomUUID();
+    let assignedId = generateUUID();
 
     if (isConfigured && navigator.onLine) {
       try {

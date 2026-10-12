@@ -7,6 +7,7 @@ import { Product, Brand, Category, OutboxItem } from '@/types';
 import { updateProductInIndex } from '@/db/search';
 import { syncService } from '@/sync/syncService';
 import { formatINR } from '@/lib/format';
+import { generateUUID } from '@/lib/uuid';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -207,7 +208,7 @@ export const ProductsPage: React.FC = () => {
     }
 
     const now = new Date().toISOString();
-    const productId = editingProduct ? editingProduct.id : crypto.randomUUID();
+    const productId = editingProduct ? editingProduct.id : generateUUID();
 
     const productRecord: Product = {
       id: productId,
@@ -224,7 +225,7 @@ export const ProductsPage: React.FC = () => {
     };
 
     const outboxItem: OutboxItem = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       entity: 'products',
       op: editingProduct ? 'update' : 'insert',
       payload: productRecord,
@@ -256,7 +257,7 @@ export const ProductsPage: React.FC = () => {
     };
 
     const outboxItem: OutboxItem = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       entity: 'products',
       op: 'update',
       payload: updatedRecord,
@@ -405,7 +406,7 @@ export const ProductsPage: React.FC = () => {
 
       for (const row of validRows) {
         const existing = await db.products.where('code').equalsIgnoreCase(row.data.code).first();
-        const prodId = existing ? existing.id : crypto.randomUUID();
+        const prodId = existing ? existing.id : generateUUID();
 
         const product: Product = {
           id: prodId,
@@ -423,7 +424,7 @@ export const ProductsPage: React.FC = () => {
 
         recordsToPut.push(product);
         outboxItems.push({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           entity: 'products',
           op: existing ? 'update' : 'insert',
           payload: product,

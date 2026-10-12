@@ -5,6 +5,7 @@ import * as z from 'zod';
 import { db, initLocalDatabase } from '@/db';
 import { Brand, OutboxItem } from '@/types';
 import { syncService } from '@/sync/syncService';
+import { generateUUID } from '@/lib/uuid';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -109,7 +110,7 @@ export const BrandsPage: React.FC = () => {
     }
 
     const now = new Date().toISOString();
-    const brandId = editingBrand ? editingBrand.id : crypto.randomUUID();
+    const brandId = editingBrand ? editingBrand.id : generateUUID();
 
     const brandRecord: Brand = {
       id: brandId,
@@ -120,7 +121,7 @@ export const BrandsPage: React.FC = () => {
     };
 
     const outboxItem: OutboxItem = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       entity: 'brands',
       op: editingBrand ? 'update' : 'insert',
       payload: brandRecord,
@@ -150,7 +151,7 @@ export const BrandsPage: React.FC = () => {
     };
 
     const outboxItem: OutboxItem = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       entity: 'brands',
       op: 'update',
       payload: updatedRecord,

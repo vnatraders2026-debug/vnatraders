@@ -24,20 +24,11 @@ import {
   Sparkles,
   Tag,
   RotateCcw,
-  RefreshCw,
-  Maximize,
-  Minimize,
 } from 'lucide-react';
-import { useFullscreen, enterFullscreen } from '@/lib/fullscreen';
-import { syncService } from '@/sync/syncService';
-import { useToast } from '@/components/ui/Toast';
 
 export const NewBillPage: React.FC = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
-  const { isFullscreen, toggleFullscreen } = useFullscreen();
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [isRefreshingCloud, setIsRefreshingCloud] = useState(false);
 
   // Cart store
   const {
@@ -99,9 +90,6 @@ export const NewBillPage: React.FC = () => {
   useEffect(() => {
     loadData();
 
-    // Attempt to enter fullscreen upon accessing the billing terminal
-    enterFullscreen();
-
     // Auto-reload when cloud data is refreshed
     const handleRefreshed = () => {
       loadData();
@@ -111,19 +99,6 @@ export const NewBillPage: React.FC = () => {
       window.removeEventListener('supabase-data-refreshed', handleRefreshed);
     };
   }, []);
-
-  const handleRefreshCloud = async () => {
-    setIsRefreshingCloud(true);
-    try {
-      const res = await syncService.forceFreshPullFromSupabase();
-      await loadData();
-      toast(res.message, 'success');
-    } catch (err: any) {
-      toast(err?.message || 'Refresh failed', 'error');
-    } finally {
-      setIsRefreshingCloud(false);
-    }
-  };
 
   // Distinct categories list
   const categories = useMemo(() => {
@@ -267,34 +242,13 @@ export const NewBillPage: React.FC = () => {
             <span><kbd className="px-1.5 py-0.5 bg-surface border border-border rounded text-text">Enter</kbd> Add</span>
             <span><kbd className="px-1.5 py-0.5 bg-surface border border-border rounded text-text">Ctrl+Enter</kbd> Save</span>
           </div>
-
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={handleRefreshCloud}
-            disabled={isRefreshingCloud}
-            className="text-xs py-0.5 h-7 text-accent border-accent/40 hover:bg-accent-light gap-1 font-sans"
-            title="Clear cache and pull fresh data directly from Supabase"
-          >
-            <RefreshCw size={12} className={isRefreshingCloud ? 'animate-spin' : ''} />
-            <span>{isRefreshingCloud ? 'Refreshing...' : 'Refresh Cloud'}</span>
-          </Button>
-
-          <button
-            onClick={toggleFullscreen}
-            className="px-2 py-0.5 h-7 rounded border border-border text-text hover:bg-surface text-xs flex items-center gap-1 font-sans transition-colors"
-            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen POS Mode'}
-          >
-            {isFullscreen ? <Minimize size={12} /> : <Maximize size={12} />}
-            <span>{isFullscreen ? 'Exit Full' : 'Fullscreen'}</span>
-          </button>
         </div>
       </div>
 
-      {/* Main Two-Pane Split Layout */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0">
-        {/* LEFT PANE: Search & Product Browser (7 cols on desktop) */}
-        <div className="lg:col-span-7 flex flex-col min-h-0 bg-surface border border-border rounded p-4">
+      {/* Main Two-Pane Split Layout (Works side-by-side on both Tablets & Desktops) */}
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-3 lg:gap-4 min-h-0">
+        {/* LEFT PANE: Search & Product Browser (7 cols on tablet & desktop) */}
+        <div className="md:col-span-7 flex flex-col min-h-0 bg-surface border border-border rounded p-3 sm:p-4">
           {/* Search Box Input */}
           <div className="relative mb-3 shrink-0">
             <Search
@@ -455,8 +409,8 @@ export const NewBillPage: React.FC = () => {
           </div>
         </div>
 
-        {/* RIGHT PANE: Current Bill Panel (5 cols on desktop) */}
-        <div className="hidden lg:flex lg:col-span-5 flex-col min-h-0 bg-surface border border-border rounded p-4">
+        {/* RIGHT PANE: Current Bill Panel (5 cols on tablet & desktop) */}
+        <div className="hidden md:flex md:col-span-5 flex-col min-h-0 bg-surface border border-border rounded p-3 sm:p-4">
           <BillPaneContent
             items={items}
             subtotal={totals.subtotal}
@@ -486,8 +440,8 @@ export const NewBillPage: React.FC = () => {
         </div>
       </div>
 
-      {/* MOBILE STICKY BOTTOM SUMMARY BAR */}
-      <div className="lg:hidden fixed bottom-16 inset-x-0 bg-surface border-t border-border px-4 py-3 flex items-center justify-between z-20">
+      {/* MOBILE STICKY BOTTOM SUMMARY BAR (Phones < 768px only) */}
+      <div className="md:hidden fixed bottom-16 inset-x-0 bg-surface border-t border-border px-4 py-3 flex items-center justify-between z-20">
         <div>
           <div className="text-xs text-text-muted">
             {items.length} {items.length === 1 ? 'item' : 'items'}
@@ -521,9 +475,9 @@ export const NewBillPage: React.FC = () => {
         </div>
       </div>
 
-      {/* MOBILE FULL-SCREEN BILL SHEET */}
+      {/* MOBILE FULL-SCREEN BILL SHEET (Phones < 768px only) */}
       {isMobileSheetOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 bg-surface flex flex-col">
+        <div className="md:hidden fixed inset-0 z-50 bg-surface flex flex-col">
           <div className="p-4 border-b border-border flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-text">VNA Crackers - Current Bill</h2>
