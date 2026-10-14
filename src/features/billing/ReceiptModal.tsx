@@ -110,6 +110,26 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
   return createPortal(
     <>
+      {paperMode === 'a4' ? (
+        <style>{`
+          @media print {
+            @page {
+              size: A4 portrait !important;
+              margin: 8mm 6mm 8mm 6mm !important;
+            }
+          }
+        `}</style>
+      ) : (
+        <style>{`
+          @media print {
+            @page {
+              size: auto !important;
+              margin: 0 !important;
+            }
+          }
+        `}</style>
+      )}
+
       <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 print-modal-overlay print:static print:p-0 print:m-0 print:block">
         {/* Backdrop */}
         <div className="fixed inset-0 bg-black/50 print:hidden" onClick={onClose} aria-hidden="true" />

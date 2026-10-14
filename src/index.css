@@ -141,7 +141,8 @@
 
   /* A4 Sheet Sales Order Invoice Print Rules */
   body.print-a4-active {
-    padding: 6mm 8mm !important;
+    padding: 0 !important;
+    margin: 0 !important;
     background: #FFFFFF !important;
   }
 
@@ -164,5 +165,17 @@
     visibility: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  .a4-page-sheet {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+
+  .a4-page-break {
+    page-break-after: always !important;
+    break-after: page !important;
   }
 }
