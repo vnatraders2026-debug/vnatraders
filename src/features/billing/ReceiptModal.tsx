@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Bill, BillItem, ShopSettings, Profile } from '@/types';
 import { checkBillEditPermission, formatRemainingTime } from '@/lib/permissions';
-import { Printer, PlusCircle, Edit3, X, MessageSquare, Bluetooth, Zap } from 'lucide-react';
+import { Printer, PlusCircle, Edit3, X, MessageSquare, Bluetooth, Zap, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { directPrinterService, PrinterStatus } from '@/lib/printer/directPrinterService';
 import { ReceiptCard } from './ReceiptCard';
+import { A4InvoiceCard } from './A4InvoiceCard';
 import { WhatsAppModal } from './WhatsAppModal';
 
 interface ReceiptModalProps {
@@ -33,6 +34,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   onClose,
 }) => {
   const { toast } = useToast();
+  const [paperMode, setPaperMode] = useState<'thermal' | 'a4'>(
+    settings.paper_size === 'a4' ? 'a4' : 'thermal'
+  );
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [printerStatus, setPrinterStatus] = useState<PrinterStatus>(directPrinterService.getStatus());
@@ -51,10 +55,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (paperMode === 'a4') {
+      document.body.classList.add('print-a4-active');
+    } else {
+      document.body.classList.remove('print-a4-active');
+    }
+    return () => {
+      document.body.classList.remove('print-a4-active');
+    };
+  }, [paperMode]);
+
   const billedUserName = billedBy || currentUser?.full_name || currentUser?.email || 'Admin';
 
   const handlePrint = async () => {
-    if (directPrinterService.isConnected()) {
+    if (paperMode === 'thermal' && directPrinterService.isConnected()) {
       setIsDirectPrinting(true);
       try {
         const res = await directPrinterService.printBillDirect(bill, items, settings, billedUserName);
@@ -66,7 +81,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         setIsDirectPrinting(false);
       }
     }
-    // Fallback to standard browser print if no direct printer is active
+    // Fallback or A4 sheet: standard browser print dialog
     window.print();
   };
 
@@ -100,29 +115,68 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         <div className="fixed inset-0 bg-black/50 print:hidden" onClick={onClose} aria-hidden="true" />
 
         {/* Main Container */}
-        <div className="relative w-full max-w-lg bg-surface border border-border rounded shadow-subtle p-4 sm:p-6 z-10 max-h-[95dvh] flex flex-col print-modal-overlay print:border-none print:p-0 print:m-0 print:shadow-none print:max-h-none print:bg-transparent">
+        <div
+          className={`relative w-full ${
+            paperMode === 'a4' ? 'max-w-4xl' : 'max-w-lg'
+          } bg-surface border border-border rounded shadow-subtle p-3 sm:p-5 z-10 max-h-[96dvh] flex flex-col print-modal-overlay print:border-none print:p-0 print:m-0 print:shadow-none print:max-h-none print:bg-transparent transition-all duration-150`}
+        >
           {/* Header Action Bar */}
-          <div className="flex items-center justify-between pb-3 border-b border-border mb-4 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-border mb-3 print:hidden">
             <div>
-              <h2 className="text-base font-bold text-text">Bill Receipt</h2>
+              <h2 className="text-base font-bold text-text">
+                {paperMode === 'a4' ? 'Sales Order (A4 Sheet)' : 'Bill Receipt (Thermal)'}
+              </h2>
               <p className="text-xs text-text-muted">{bill.bill_no}</p>
             </div>
+
+            {/* Paper Size Format Toggle */}
+            <div className="flex items-center gap-1 bg-background border border-border p-0.5 rounded text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setPaperMode('thermal')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded transition-colors ${
+                  paperMode === 'thermal'
+                    ? 'bg-accent text-white shadow-sm'
+                    : 'text-text-muted hover:text-text'
+                }`}
+                title="Print on standard 80mm or 58mm POS thermal roll"
+              >
+                <Printer size={13} />
+                <span>Thermal</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaperMode('a4')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded transition-colors ${
+                  paperMode === 'a4'
+                    ? 'bg-accent text-white shadow-sm'
+                    : 'text-text-muted hover:text-text'
+                }`}
+                title="Print on standard A4 paper formatted as Sales Order"
+              >
+                <FileText size={13} />
+                <span>A4 Invoice</span>
+              </button>
+            </div>
+
             <div className="flex items-center gap-2">
-              {printerStatus.isConnected ? (
-                <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="truncate max-w-[140px]">Direct: {printerStatus.deviceName}</span>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleConnectDirectBluetooth}
-                  className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent-hover bg-accent-light px-2 py-0.5 rounded border border-accent/30 transition-colors"
-                  title="Connect wireless Bluetooth thermal printer for instant direct print"
-                >
-                  <Bluetooth size={12} />
-                  <span>Connect Direct</span>
-                </button>
+              {paperMode === 'thermal' && (
+                printerStatus.isConnected ? (
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="truncate max-w-[140px]">Direct: {printerStatus.deviceName}</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleConnectDirectBluetooth}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent-hover bg-accent-light px-2 py-0.5 rounded border border-accent/30 transition-colors"
+                    title="Connect wireless Bluetooth thermal printer for instant direct print"
+                  >
+                    <Bluetooth size={12} />
+                    <span>Connect Direct</span>
+                  </button>
+                )
               )}
               <button
                 onClick={onClose}
@@ -134,16 +188,27 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
           </div>
 
-          {/* Printable Receipt Paper Container */}
+          {/* Printable Container */}
           <div className="flex-1 overflow-y-auto p-2 bg-background border border-border rounded flex justify-center print:border-none print:p-0 print:m-0 print:overflow-visible print:bg-transparent">
-            <ReceiptCard
-              bill={bill}
-              items={items}
-              settings={settings}
-              billedBy={billedUserName}
-              id="receipt-print-area"
-              className="w-full"
-            />
+            {paperMode === 'a4' ? (
+              <A4InvoiceCard
+                bill={bill}
+                items={items}
+                settings={settings}
+                billedBy={billedUserName}
+                id="a4-invoice-print-area"
+                className="w-full"
+              />
+            ) : (
+              <ReceiptCard
+                bill={bill}
+                items={items}
+                settings={settings}
+                billedBy={billedUserName}
+                id="receipt-print-area"
+                className="w-full"
+              />
+            )}
           </div>
 
           {/* Action Controls */}

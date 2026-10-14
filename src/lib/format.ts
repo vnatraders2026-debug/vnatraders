@@ -212,3 +212,98 @@ export function calculateBillTotals(
     brandTotals,
   };
 }
+
+/**
+ * Convert a number to Indian Rupees in words (e.g., 2778 -> "Rupees Two Thousand Seven Hundred Seventy Eight Only")
+ */
+export function numberToWordsINR(amount: number): string {
+  const rounded = Math.round(amount * 100) / 100;
+  if (isNaN(rounded) || rounded === 0) return 'Rupees Zero Only';
+
+  const ones = [
+    '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+    'Seventeen', 'Eighteen', 'Nineteen'
+  ];
+  const tens = [
+    '', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'
+  ];
+
+  function convertTwoDigits(n: number): string {
+    if (n === 0) return '';
+    if (n < 20) return ones[n];
+    const t = Math.floor(n / 10);
+    const u = n % 10;
+    return `${tens[t]}${u > 0 ? ' ' + ones[u] : ''}`;
+  }
+
+  function convertThreeDigits(n: number): string {
+    const h = Math.floor(n / 100);
+    const rest = n % 100;
+    let res = '';
+    if (h > 0) res += `${ones[h]} Hundred`;
+    if (rest > 0) {
+      if (res) res += ' ';
+      res += convertTwoDigits(rest);
+    }
+    return res;
+  }
+
+  const integerPart = Math.floor(Math.abs(rounded));
+  const paise = Math.round((Math.abs(rounded) - integerPart) * 100);
+
+  let num = integerPart;
+  const parts: string[] = [];
+
+  // Crores: 10,000,000
+  const crore = Math.floor(num / 10000000);
+  num %= 10000000;
+  if (crore > 0) {
+    parts.push(`${convertThreeDigits(crore)} Crore`);
+  }
+
+  // Lakhs: 100,000
+  const lakh = Math.floor(num / 100000);
+  num %= 100000;
+  if (lakh > 0) {
+    parts.push(`${convertTwoDigits(lakh)} Lakh`);
+  }
+
+  // Thousands: 1,000
+  const thousand = Math.floor(num / 1000);
+  num %= 1000;
+  if (thousand > 0) {
+    parts.push(`${convertTwoDigits(thousand)} Thousand`);
+  }
+
+  // Hundreds & units
+  if (num > 0) {
+    parts.push(convertThreeDigits(num));
+  }
+
+  let words = parts.join(' ').trim();
+  if (!words) words = 'Zero';
+
+  let result = `Rupees ${words}`;
+  if (paise > 0) {
+    result += ` and ${convertTwoDigits(paise)} Paise`;
+  }
+  result += ' Only';
+
+  return result;
+}
+
+/**
+ * Format date in DD/MM/YYYY format as seen in reference invoice
+ */
+export function formatDateDMY(dateInput: string | Date | number): string {
+  if (!dateInput) return '-';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return '-';
+
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+
+  return `${day}/${month}/${year}`;
+}
