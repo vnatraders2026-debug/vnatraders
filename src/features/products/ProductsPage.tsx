@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { db, initLocalDatabase, DEFAULT_BRANDS, DEFAULT_CATEGORIES, addCategory } from '@/db';
+import { db, initLocalDatabase, DEFAULT_BRANDS, DEFAULT_CATEGORIES, addCategory, deleteCategory } from '@/db';
 import { Product, Brand, Category, OutboxItem } from '@/types';
 import { updateProductInIndex } from '@/db/search';
 import { syncService } from '@/sync/syncService';
@@ -19,7 +19,24 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/features/auth/AuthContext';
 import { logActivity } from '@/lib/activityLogger';
-import { Search, Plus, Download, Upload, Edit, EyeOff, Eye, FileSpreadsheet, Tag } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  Download,
+  Upload,
+  Edit,
+  EyeOff,
+  Eye,
+  FileSpreadsheet,
+  Tag,
+  Tags,
+  Trash2,
+  FilterX,
+  RotateCcw,
+  X,
+  AlertTriangle,
+  FolderPlus,
+} from 'lucide-react';
 
 const productSchema = z.object({
   code: z.string().min(1, 'Product code is required').trim(),
@@ -49,9 +66,13 @@ export const ProductsPage: React.FC = () => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Add Category Modal state
-  const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
+  // Category Management Modal states (Add & Delete)
+  const [isManageCategoriesOpen, setIsManageCategoriesOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
+  const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
+  const [reassignCategoryName, setReassignCategoryName] = useState<string>('');
+  const [isDeletingCategory, setIsDeletingCategory] = useState(false);
 
   // CSV Import Modal state
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
@@ -96,6 +117,25 @@ export const ProductsPage: React.FC = () => {
         await initLocalDatabase();
         allCats = await db.categories.toArray();
       }
+
+      // Sync any product categories into db.categories if missing
+      const existingCatNames = new Set(allCats.map((c) => c.name.toLowerCase()));
+      const missingCats: Category[] = [];
+      all.forEach((p) => {
+        if (p.category && !existingCatNames.has(p.category.toLowerCase())) {
+          existingCatNames.add(p.category.toLowerCase());
+          missingCats.push({
+            id: `cat-${Date.now()}-${generateUUID().slice(0, 6)}`,
+            name: p.category.trim(),
+            is_active: true,
+            created_at: new Date().toISOString(),
+          });
+        }
+      });
+      if (missingCats.length > 0) {
+        await db.categories.bulkPut(missingCats);
+        allCats = await db.categories.toArray();
+      }
       setCategoriesList(allCats);
     } finally {
       setLoading(false);
@@ -106,18 +146,37 @@ export const ProductsPage: React.FC = () => {
     loadData();
   }, []);
 
-  // Distinct cracker categories (including seeded Sivakasi categories, db entries, and products)
+  // Compute product count per category
+  const productCategoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    products.forEach((p) => {
+      if (p.category) {
+        counts[p.category] = (counts[p.category] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [products]);
+
+  // Distinct cracker categories (active from db.categories)
   const availableCategoryNames = useMemo(() => {
     const set = new Set<string>();
-    DEFAULT_CATEGORIES.forEach((c) => set.add(c));
     categoriesList.forEach((c) => {
-      if (c.name && c.is_active) set.add(c.name);
+      if (c.name && c.is_active !== false) set.add(c.name);
     });
-    products.forEach((p) => {
-      if (p.category) set.add(p.category);
-    });
+    if (set.size === 0) {
+      DEFAULT_CATEGORIES.forEach((c) => set.add(c));
+    }
     return Array.from(set).sort();
-  }, [categoriesList, products]);
+  }, [categoriesList]);
+
+  // Categories filtered for Manage Categories modal search
+  const filteredCategories = useMemo(() => {
+    return categoriesList.filter((c) => {
+      if (c.is_active === false) return false;
+      if (!categorySearchQuery.trim()) return true;
+      return c.name.toLowerCase().includes(categorySearchQuery.toLowerCase().trim());
+    });
+  }, [categoriesList, categorySearchQuery]);
 
   // Distinct brand names for filter (include any from db plus products)
   const availableBrandNames = useMemo(() => {
@@ -128,6 +187,21 @@ export const ProductsPage: React.FC = () => {
     });
     return Array.from(set).sort();
   }, [brands, products]);
+
+  // Check if any filter is active
+  const isFiltered =
+    searchQuery.trim() !== '' ||
+    brandFilter !== 'all' ||
+    categoryFilter !== 'all' ||
+    statusFilter !== 'all';
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setBrandFilter('all');
+    setCategoryFilter('all');
+    setStatusFilter('all');
+    toast('All filters cleared', 'info');
+  };
 
   // Filtered products
   const filteredProducts = useMemo(() => {
@@ -167,10 +241,63 @@ export const ProductsPage: React.FC = () => {
       await loadData();
       setValue('category', created.name);
       setNewCategoryName('');
-      setIsAddCategoryOpen(false);
       toast(`Category "${created.name}" added successfully!`, 'success');
     } catch (err: any) {
       toast(err?.message || 'Failed to add category', 'error');
+    }
+  };
+
+  const handlePromptDeleteCategory = (category: Category) => {
+    setDeletingCategory(category);
+    const otherCats = availableCategoryNames.filter(
+      (c) => c.toLowerCase() !== category.name.toLowerCase()
+    );
+    setReassignCategoryName(otherCats[0] || 'Crackers');
+  };
+
+  const handleConfirmDeleteCategory = async () => {
+    if (!deletingCategory) return;
+    setIsDeletingCategory(true);
+    try {
+      const count = productCategoryCounts[deletingCategory.name] || 0;
+      const reassignTo = count > 0 ? reassignCategoryName : undefined;
+
+      await deleteCategory(deletingCategory.id, deletingCategory.name, reassignTo);
+
+      // Reset category filter if it matches the deleted category
+      if (categoryFilter.toLowerCase() === deletingCategory.name.toLowerCase()) {
+        setCategoryFilter('all');
+      }
+
+      // If form was using this category, update to replacement
+      if (editingProduct?.category?.toLowerCase() === deletingCategory.name.toLowerCase()) {
+        setValue('category', reassignCategoryName || availableCategoryNames[0] || 'Crackers');
+      }
+
+      logActivity({
+        userId: user?.id,
+        userName: user?.full_name || user?.email,
+        action: 'DELETE',
+        entity: 'categories',
+        entityId: deletingCategory.id,
+        summary: `Deleted category "${deletingCategory.name}"${reassignTo ? ` (${count} products moved to "${reassignTo}")` : ''}`,
+      });
+
+      syncService.updatePendingCount();
+
+      toast(
+        count > 0
+          ? `Category "${deletingCategory.name}" deleted (${count} products moved to "${reassignTo}")`
+          : `Category "${deletingCategory.name}" deleted successfully!`,
+        'success'
+      );
+
+      setDeletingCategory(null);
+      await loadData();
+    } catch (err: any) {
+      toast(err?.message || 'Failed to delete category', 'error');
+    } finally {
+      setIsDeletingCategory(false);
     }
   };
 
@@ -510,14 +637,24 @@ export const ProductsPage: React.FC = () => {
     <div className="space-y-4">
       {/* Controls Bar */}
       <div className="bg-surface border border-border rounded p-4 flex flex-col md:flex-row gap-3 items-center justify-between shadow-subtle">
-        <div className="relative w-full md:w-80">
+        <div className="relative w-full md:w-72">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
           <Input
             placeholder="Search by code, name, or price..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 min-h-[40px] text-xs"
+            className="pl-9 pr-8 min-h-[40px] text-xs"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text rounded-full hover:bg-border/60 transition-colors"
+              title="Clear search text"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
@@ -544,7 +681,7 @@ export const ProductsPage: React.FC = () => {
             <option value="all">All Categories</option>
             {availableCategoryNames.map((c) => (
               <option key={c} value={c}>
-                {c}
+                Category: {c}
               </option>
             ))}
           </Select>
@@ -559,6 +696,35 @@ export const ProductsPage: React.FC = () => {
             <option value="active">Active Only</option>
             <option value="inactive">Deactivated Only</option>
           </Select>
+
+          {/* CLEAR FILTER BUTTON */}
+          {isFiltered && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleClearFilters}
+              className="text-xs text-danger hover:bg-danger-light hover:border-danger/40 border-dashed min-h-[40px] px-3 gap-1.5 shrink-0"
+              title="Clear all active search and filters"
+            >
+              <FilterX size={14} />
+              <span>Clear Filter</span>
+            </Button>
+          )}
+
+          {/* Manage Categories Button (Add & Delete Categories) */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setIsManageCategoriesOpen(true)}
+            className="min-h-[40px] text-xs gap-1.5 shrink-0 font-medium border-accent/40 text-accent hover:bg-accent-light"
+            title="Manage, Add or Delete Cracker Categories"
+          >
+            <Tags size={14} />
+            <span>Categories</span>
+            <span className="ml-0.5 px-1.5 py-0.2 bg-accent/15 text-accent rounded-full text-[10px] font-bold">
+              {availableCategoryNames.length}
+            </span>
+          </Button>
 
           {/* Sample CSV Download */}
           <Button
@@ -592,14 +758,84 @@ export const ProductsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Active Filters Summary Pills */}
+      {isFiltered && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs bg-surface/60 border border-border px-3 py-2 rounded">
+          <span className="text-text-muted font-medium flex items-center gap-1 mr-1">
+            <FilterX size={13} className="text-accent" />
+            Active Filters:
+          </span>
+          {searchQuery.trim() && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-background border border-border rounded text-text font-medium text-[11px]">
+              Search: <strong className="text-accent">"{searchQuery}"</strong>
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="hover:text-danger ml-0.5"
+                title="Remove search filter"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
+          {brandFilter !== 'all' && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-background border border-border rounded text-text font-medium text-[11px]">
+              Brand: <strong className="text-accent">{brandFilter}</strong>
+              <button
+                type="button"
+                onClick={() => setBrandFilter('all')}
+                className="hover:text-danger ml-0.5"
+                title="Remove brand filter"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
+          {categoryFilter !== 'all' && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-background border border-border rounded text-text font-medium text-[11px]">
+              Category: <strong className="text-accent">{categoryFilter}</strong>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('all')}
+                className="hover:text-danger ml-0.5"
+                title="Remove category filter"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
+          {statusFilter !== 'all' && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-background border border-border rounded text-text font-medium text-[11px]">
+              Status: <strong className="text-accent">{statusFilter === 'active' ? 'Active' : 'Deactivated'}</strong>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className="hover:text-danger ml-0.5"
+                title="Remove status filter"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleClearFilters}
+            className="text-danger hover:underline text-[11px] font-semibold ml-auto flex items-center gap-1"
+          >
+            <RotateCcw size={11} />
+            <span>Clear All</span>
+          </button>
+        </div>
+      )}
+
       {/* Products Table */}
       {loading ? (
         <TableSkeleton rows={8} cols={8} />
       ) : filteredProducts.length === 0 ? (
         <EmptyState
-          message="No products match the selected criteria"
-          actionLabel="Add New Product"
-          onAction={handleOpenCreate}
+          message={isFiltered ? 'No products match the selected filters' : 'No products found'}
+          actionLabel={isFiltered ? 'Clear All Filters' : 'Add New Product'}
+          onAction={isFiltered ? handleClearFilters : handleOpenCreate}
         />
       ) : (
         <Table>
@@ -746,11 +982,11 @@ export const ProductsPage: React.FC = () => {
               </label>
               <button
                 type="button"
-                onClick={() => setIsAddCategoryOpen(true)}
+                onClick={() => setIsManageCategoriesOpen(true)}
                 className="text-xs text-accent hover:underline flex items-center gap-1 font-medium"
               >
-                <Plus size={13} />
-                <span>+ Add Category</span>
+                <Tags size={13} />
+                <span>+ Add / Manage Categories</span>
               </button>
             </div>
             <select
@@ -879,39 +1115,217 @@ export const ProductsPage: React.FC = () => {
         </div>
       </Dialog>
 
-      {/* ADD NEW CATEGORY MODAL */}
+      {/* MANAGE CATEGORIES MODAL (ADD & DELETE CATEGORIES) */}
       <Dialog
-        isOpen={isAddCategoryOpen}
-        onClose={() => setIsAddCategoryOpen(false)}
-        title="Add New Cracker Category"
+        isOpen={isManageCategoriesOpen}
+        onClose={() => {
+          setIsManageCategoriesOpen(false);
+          setCategorySearchQuery('');
+        }}
+        title="Manage Categories"
+        maxWidth="lg"
       >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleCreateCategory();
-          }}
-          className="space-y-4"
-        >
+        <div className="space-y-4">
           <p className="text-xs text-text-muted">
-            Enter the name of the new cracker category. It will instantly appear in all category dropdowns and product filters.
+            Add new categories or delete existing categories. Any changes automatically sync across all your billing terminals.
           </p>
-          <Input
-            label="Category Name"
-            placeholder="e.g. Aerial Confetti, Mega Chakkars, Laser Fountains"
-            value={newCategoryName}
-            onChange={(e) => setNewCategoryName(e.target.value)}
-            autoFocus
-          />
-          <div className="flex justify-end gap-2 pt-2 border-t border-border">
-            <Button variant="secondary" type="button" onClick={() => setIsAddCategoryOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" type="submit" disabled={!newCategoryName.trim()}>
-              <Plus size={14} />
-              <span>Add Category</span>
+
+          {/* ADD CATEGORY CARD */}
+          <div className="bg-background border border-border rounded-lg p-3 space-y-2">
+            <label className="text-xs font-bold text-text flex items-center gap-1.5">
+              <FolderPlus size={15} className="text-accent" />
+              <span>Add New Category</span>
+            </label>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleCreateCategory();
+              }}
+              className="flex gap-2"
+            >
+              <Input
+                placeholder="Enter category name (e.g. Laser Fountains, Confetti)..."
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                className="text-xs flex-1"
+                autoFocus={isManageCategoriesOpen}
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                type="submit"
+                disabled={!newCategoryName.trim()}
+                className="shrink-0 gap-1 min-h-[40px] px-3 font-semibold"
+              >
+                <Plus size={14} />
+                <span>Add Category</span>
+              </Button>
+            </form>
+          </div>
+
+          {/* SEARCH & COUNTER */}
+          <div className="flex items-center justify-between gap-2 pt-2">
+            <span className="text-xs font-semibold text-text flex items-center gap-1.5">
+              <Tags size={14} className="text-accent" />
+              Categories ({filteredCategories.length})
+            </span>
+            <div className="relative w-48">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
+              <input
+                type="text"
+                placeholder="Search categories..."
+                value={categorySearchQuery}
+                onChange={(e) => setCategorySearchQuery(e.target.value)}
+                className="w-full pl-8 pr-2 py-1 text-xs bg-surface text-text border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
+          </div>
+
+          {/* CATEGORIES LIST */}
+          <div className="border border-border rounded divide-y divide-border max-h-72 overflow-y-auto">
+            {filteredCategories.length === 0 ? (
+              <div className="p-6 text-center text-xs text-text-muted">
+                No categories found matching "{categorySearchQuery}"
+              </div>
+            ) : (
+              filteredCategories.map((c) => {
+                const count = productCategoryCounts[c.name] || 0;
+                return (
+                  <div
+                    key={c.id}
+                    className="p-3 flex items-center justify-between hover:bg-background/60 transition-colors gap-2"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Tag size={14} className="text-accent shrink-0" />
+                      <span className="text-xs font-semibold text-text truncate">
+                        {c.name}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-surface border border-border text-text-muted shrink-0">
+                        {count} {count === 1 ? 'product' : 'products'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCategoryFilter(c.name);
+                          setIsManageCategoriesOpen(false);
+                          toast(`Filtered by category "${c.name}"`, 'info');
+                        }}
+                        className="text-[11px] text-accent hover:underline px-2 py-1 rounded hover:bg-accent/10 font-medium transition-colors"
+                        title={`View products in "${c.name}"`}
+                      >
+                        View Products
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePromptDeleteCategory(c)}
+                        className="p-1.5 text-text-muted hover:text-danger hover:bg-danger-light rounded transition-colors"
+                        title={`Delete category "${c.name}"`}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-border">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setIsManageCategoriesOpen(false);
+                setCategorySearchQuery('');
+              }}
+            >
+              Done
             </Button>
           </div>
-        </form>
+        </div>
+      </Dialog>
+
+      {/* DELETE CATEGORY CONFIRMATION DIALOG */}
+      <Dialog
+        isOpen={!!deletingCategory}
+        onClose={() => setDeletingCategory(null)}
+        title={`Delete Category: "${deletingCategory?.name}"`}
+        maxWidth="md"
+      >
+        <div className="space-y-4">
+          {(productCategoryCounts[deletingCategory?.name || ''] || 0) === 0 ? (
+            <p className="text-xs text-text">
+              Are you sure you want to delete category <strong>"{deletingCategory?.name}"</strong>?
+              This category currently has no assigned products and will be removed immediately.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-600" />
+                <div>
+                  <strong className="block font-bold">
+                    {productCategoryCounts[deletingCategory?.name || '']} product(s) are in this category
+                  </strong>
+                  <span>
+                    Select which category to reassign these products to so they remain properly categorized:
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-text mb-1">
+                  Move products to category:
+                </label>
+                <select
+                  value={reassignCategoryName}
+                  onChange={(e) => setReassignCategoryName(e.target.value)}
+                  className="w-full min-h-[40px] px-3 py-2 text-xs bg-surface text-text border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                >
+                  {availableCategoryNames
+                    .filter((c) => c.toLowerCase() !== deletingCategory?.name.toLowerCase())
+                    .map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-border">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setDeletingCategory(null)}
+              disabled={isDeletingCategory}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleConfirmDeleteCategory}
+              disabled={
+                isDeletingCategory ||
+                ((productCategoryCounts[deletingCategory?.name || ''] || 0) > 0 && !reassignCategoryName)
+              }
+              className="gap-1.5"
+            >
+              <Trash2 size={14} />
+              <span>
+                {isDeletingCategory
+                  ? 'Deleting...'
+                  : (productCategoryCounts[deletingCategory?.name || ''] || 0) > 0
+                  ? 'Reassign & Delete'
+                  : 'Delete Category'}
+              </span>
+            </Button>
+          </div>
+        </div>
       </Dialog>
     </div>
   );

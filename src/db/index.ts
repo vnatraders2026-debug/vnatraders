@@ -185,6 +185,61 @@ export async function addCategory(name: string): Promise<Category> {
 }
 
 /**
+ * Delete a category locally and queue outbox for cloud sync.
+ * Optionally reassign affected products to another category.
+ */
+export async function deleteCategory(
+  categoryId: string,
+  categoryName: string,
+  reassignToCategory?: string
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  await db.transaction('rw', [db.categories, db.products, db.outbox], async () => {
+    // 1. If reassignToCategory is provided, update affected products
+    if (reassignToCategory && reassignToCategory.trim()) {
+      const targetCat = reassignToCategory.trim();
+      const affectedProducts = await db.products
+        .filter((p) => (p.category || '').toLowerCase() === categoryName.toLowerCase())
+        .toArray();
+
+      for (const prod of affectedProducts) {
+        const updatedProd: Product = {
+          ...prod,
+          category: targetCat,
+          updated_at: now,
+        };
+        await db.products.put(updatedProd);
+        await db.outbox.put({
+          id: generateUUID(),
+          entity: 'products',
+          op: 'update',
+          payload: updatedProd,
+          status: 'pending',
+          attempts: 0,
+          created_at: now,
+        });
+      }
+    }
+
+    // 2. Delete the category from Dexie
+    await db.categories.delete(categoryId);
+
+    // 3. Queue outbox item for Supabase cloud sync
+    const outboxItem: OutboxItem = {
+      id: generateUUID(),
+      entity: 'categories',
+      op: 'delete',
+      payload: { id: categoryId, name: categoryName, is_active: false },
+      status: 'pending',
+      attempts: 0,
+      created_at: now,
+    };
+    await db.outbox.put(outboxItem);
+  });
+}
+
+/**
  * Get shop settings from Dexie
  */
 export async function getShopSettings(): Promise<ShopSettings> {

@@ -306,7 +306,15 @@ class SyncService {
     } else if (item.entity === 'categories') {
       const { id, name, is_active } = item.payload;
       try {
-        await supabase.from('categories').upsert({ id, name, is_active }, { onConflict: 'id' });
+        if (item.op === 'delete') {
+          const { error: delErr } = await supabase.from('categories').delete().eq('id', id);
+          if (delErr) {
+            console.warn('Categories cloud delete notice, falling back to inactive:', delErr?.message);
+            await supabase.from('categories').update({ is_active: false }).eq('id', id);
+          }
+        } else {
+          await supabase.from('categories').upsert({ id, name, is_active }, { onConflict: 'id' });
+        }
       } catch (err: any) {
         console.warn('Categories table sync notice:', err?.message);
       }
@@ -468,13 +476,15 @@ class SyncService {
 
     try {
       // 1. Clear cached local products, sync metadata, bills, and bill_items
-      await db.transaction('rw', [db.products, db.sync_meta, db.bills, db.bill_items, db.outbox], async () => {
+      await db.transaction('rw', [db.products, db.sync_meta, db.bills, db.bill_items, db.categories, db.outbox], async () => {
         await db.products.clear();
         await db.sync_meta.clear();
         await db.bills.clear();
         await db.bill_items.clear();
+        await db.categories.clear();
         await db.outbox.where('entity').equals('bills').delete();
         await db.outbox.where('entity').equals('bill_items').delete();
+        await db.outbox.where('entity').equals('categories').delete();
       });
 
       // 2. Fetch fresh products from Supabase
@@ -503,7 +513,8 @@ class SyncService {
       try {
         const { data: serverCategories } = await supabase.from('categories').select('*');
         if (serverCategories && serverCategories.length > 0) {
-          await db.categories.bulkPut(serverCategories as Category[]);
+          const activeOnly = serverCategories.filter((c: any) => c.is_active !== false);
+          await db.categories.bulkPut(activeOnly as Category[]);
         }
       } catch (cErr) {
         console.warn('Categories fresh pull warning:', cErr);
