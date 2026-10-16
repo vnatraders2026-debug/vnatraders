@@ -94,7 +94,7 @@ export const LoginPage: React.FC = () => {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@vnatraders.com"
+                  placeholder="Mail Id"
                   autoComplete="email"
                   required
                   className="w-full pl-9 pr-3 min-h-[44px] text-base sm:text-sm bg-surface text-text border border-border rounded focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition-colors"

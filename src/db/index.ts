@@ -12,7 +12,7 @@ import {
   ActivityLog,
   DeviceSequence,
 } from '@/types';
-import { getISTYYMMDD, formatBillNo } from '@/lib/format';
+import { getISTYYMMDD, formatBillNo, consolidateBillItems, calculateBillTotals } from '@/lib/format';
 import { generateUUID } from '@/lib/uuid';
 import { supabase, isConfigured } from '@/lib/supabase';
 
@@ -140,6 +140,56 @@ export async function initLocalDatabase(): Promise<void> {
     .toArray();
   if (legacyDemoProducts.length > 0) {
     await db.products.bulkDelete(legacyDemoProducts.map((p) => p.id));
+  }
+
+  // Self-healing: consolidate any duplicated bill items in Dexie
+  await cleanupDuplicateBillItemsInDb();
+}
+
+/**
+ * Self-healing routine: detects and fixes any existing bills in Dexie that accumulated duplicate items
+ * from previous edits or sync anomalies.
+ */
+export async function cleanupDuplicateBillItemsInDb(): Promise<void> {
+  try {
+    const allBillItems = await db.bill_items.toArray();
+    if (!allBillItems || allBillItems.length === 0) return;
+
+    // Group items by bill_id
+    const billMap = new Map<string, BillItem[]>();
+    for (const item of allBillItems) {
+      if (!item.bill_id) continue;
+      const list = billMap.get(item.bill_id) || [];
+      list.push(item);
+      billMap.set(item.bill_id, list);
+    }
+
+    for (const [billId, rawItems] of billMap.entries()) {
+      const consolidated = consolidateBillItems(rawItems);
+      if (consolidated.length < rawItems.length) {
+        await db.transaction('rw', [db.bill_items, db.bills], async () => {
+          await db.bill_items.where('bill_id').equals(billId).delete();
+          await db.bill_items.bulkPut(consolidated);
+
+          const bill = await db.bills.get(billId);
+          if (bill) {
+            const calculatedTotals = calculateBillTotals(consolidated, 0, bill.brand_discounts);
+            if (bill.subtotal > calculatedTotals.subtotal) {
+              const discount = bill.discount > 0
+                ? Math.min(bill.discount, calculatedTotals.subtotal)
+                : Math.max(0, calculatedTotals.subtotal - calculatedTotals.total);
+              await db.bills.update(billId, {
+                subtotal: calculatedTotals.subtotal,
+                discount: Math.round(discount * 100) / 100,
+                total: Math.max(0, Math.round((calculatedTotals.subtotal - discount) * 100) / 100),
+              });
+            }
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Notice in cleanupDuplicateBillItemsInDb:', err);
   }
 }
 

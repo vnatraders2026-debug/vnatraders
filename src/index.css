@@ -150,7 +150,7 @@
     display: block !important;
     visibility: visible !important;
     width: 100% !important;
-    max-width: 210mm !important;
+    max-width: 100% !important;
     margin: 0 auto !important;
     padding: 0 !important;
     box-sizing: border-box !important;
@@ -167,15 +167,28 @@
     print-color-adjust: exact !important;
   }
 
-  .a4-page-sheet {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    box-sizing: border-box !important;
-    width: 100% !important;
+  /* Multi-page continuation rules for A4 invoice */
+  #a4-invoice-print-area table {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
   }
 
-  .a4-page-break {
-    page-break-after: always !important;
-    break-after: page !important;
+  #a4-invoice-print-area thead {
+    display: table-header-group !important;
+  }
+
+  #a4-invoice-print-area tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  #a4-invoice-print-area .invoice-header-box {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  #a4-invoice-print-area .invoice-footer-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }

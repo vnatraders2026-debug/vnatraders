@@ -237,7 +237,15 @@ class SyncService {
 
       if (billError) throw new Error(`Bill sync error: ${billError.message}`);
 
-      // 2. If items are bundled, upsert bill items
+      // 2. If this is an update (edited bill), delete old items in Supabase first to prevent duplicates!
+      if (item.op === 'update' || rawBill.edited_at) {
+        const { error: delError } = await supabase.from('bill_items').delete().eq('bill_id', rawBill.id);
+        if (delError) {
+          console.warn('Notice deleting old bill_items for update in cloud:', delError.message);
+        }
+      }
+
+      // 3. If items are bundled, upsert bill items
       if (items && Array.isArray(items) && items.length > 0) {
         const sanitizedItems = items.map((it: any) => ({
           id: it.id,
@@ -407,6 +415,7 @@ class SyncService {
           .select('*')
           .in('bill_id', billIds);
         if (serverItems && serverItems.length > 0) {
+          await db.bill_items.where('bill_id').anyOf(billIds).delete();
           await db.bill_items.bulkPut(serverItems as BillItem[]);
         }
       }

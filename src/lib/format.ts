@@ -307,3 +307,50 @@ export function formatDateDMY(dateInput: string | Date | number): string {
 
   return `${day}/${month}/${year}`;
 }
+
+/**
+ * Consolidate duplicate items in a bill so each product has exactly one row with combined quantity
+ */
+export function consolidateBillItems<
+  T extends {
+    product_name: string;
+    unit_price: number;
+    qty: number;
+    line_total?: number;
+    brand?: string;
+    product_id?: string | null;
+    id?: string;
+  }
+>(items: T[]): T[] {
+  if (!items || items.length === 0) return [];
+  const map = new Map<string, T>();
+
+  for (const item of items) {
+    const brand = (item.brand || 'General').trim() || 'General';
+    const normName = (item.product_name || '').trim().toLowerCase();
+    const unitPrice = Number(item.unit_price) || 0;
+    // Matching key: normalized name + unit price + brand
+    const key = `${normName}__${unitPrice}__${brand.toLowerCase()}`;
+
+    const existing = map.get(key);
+    if (existing) {
+      const combinedQty = (Number(existing.qty) || 0) + (Number(item.qty) || 0);
+      existing.qty = combinedQty;
+      existing.line_total = Math.round(combinedQty * unitPrice * 100) / 100;
+      if (!existing.product_id && item.product_id) {
+        existing.product_id = item.product_id;
+      }
+    } else {
+      const qty = Number(item.qty) || 0;
+      map.set(key, {
+        ...item,
+        brand,
+        unit_price: unitPrice,
+        qty,
+        line_total: Number(item.line_total) || Math.round(qty * unitPrice * 100) / 100,
+      });
+    }
+  }
+
+  return Array.from(map.values());
+}

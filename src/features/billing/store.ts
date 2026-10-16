@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Product, PaymentMode, Bill, BillItem, OutboxItem, Profile } from '@/types';
-import { calculateBillTotals, BillTotalsResult } from '@/lib/format';
+import { calculateBillTotals, BillTotalsResult, consolidateBillItems } from '@/lib/format';
 import { db, generateNextBillNo } from '@/db';
 import { syncService } from '@/sync/syncService';
 import { generateUUID } from '@/lib/uuid';
@@ -28,6 +28,8 @@ interface CartState {
   payment_mode: PaymentMode;
   editingBillId: string | null;
   editingBillNo: string | null;
+  editingBillCreatedAt: string | null;
+  editingBillCreatedBy: string | null;
 
   // Actions
   addItem: (product: Product, quantity?: number) => void;
@@ -60,11 +62,20 @@ export const useCartStore = create<CartState>((set, get) => ({
   payment_mode: 'cash',
   editingBillId: null,
   editingBillNo: null,
+  editingBillCreatedAt: null,
+  editingBillCreatedBy: null,
 
   addItem: (product: Product, quantity: number = 1) => {
     const brand = (product.brand || 'Standard').trim();
     set((state) => {
-      const existingIndex = state.items.findIndex((item) => item.product_id === product.id);
+      // Find existing item by product_id, code, or exact name + unit price
+      const existingIndex = state.items.findIndex(
+        (item) =>
+          (product.id && item.product_id && item.product_id === product.id) ||
+          (product.code && item.code && item.code.toUpperCase() === product.code.toUpperCase()) ||
+          (item.product_name.trim().toLowerCase() === product.name.trim().toLowerCase() &&
+            Number(item.unit_price) === Number(product.price))
+      );
       if (existingIndex > -1) {
         const updatedItems = [...state.items];
         const existing = updatedItems[existingIndex];
@@ -72,6 +83,8 @@ export const useCartStore = create<CartState>((set, get) => ({
         updatedItems[existingIndex] = {
           ...existing,
           brand: brand,
+          product_id: existing.product_id || product.id,
+          code: existing.code || product.code,
           qty: newQty,
           line_total: Math.round(newQty * existing.unit_price * 100) / 100,
         };
@@ -177,19 +190,23 @@ export const useCartStore = create<CartState>((set, get) => ({
       payment_mode: 'cash',
       editingBillId: null,
       editingBillNo: null,
+      editingBillCreatedAt: null,
+      editingBillCreatedBy: null,
     }),
 
   loadBillForEdit: (bill: Bill, billItems: BillItem[]) => {
-    const loadedItems: CartItem[] = billItems.map((bi) => ({
-      id: bi.id,
+    // Consolidate duplicate items if any existed in the loaded bill
+    const consolidated = consolidateBillItems(billItems);
+    const loadedItems: CartItem[] = consolidated.map((bi) => ({
+      id: bi.id || generateUUID(),
       product_id: bi.product_id || '',
       code: '',
       product_name: bi.product_name,
-      brand: bi.brand || 'General',
+      brand: (bi.brand || 'General').trim() || 'General',
       unit: 'box',
-      unit_price: bi.unit_price,
-      qty: bi.qty,
-      line_total: bi.line_total,
+      unit_price: Number(bi.unit_price) || 0,
+      qty: Number(bi.qty) || 0,
+      line_total: Number(bi.line_total) || Math.round((Number(bi.qty) || 0) * (Number(bi.unit_price) || 0) * 100) / 100,
       stock: 999,
     }));
 
@@ -205,6 +222,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       payment_mode: bill.payment_mode,
       editingBillId: bill.id,
       editingBillNo: bill.bill_no,
+      editingBillCreatedAt: bill.created_at || null,
+      editingBillCreatedBy: bill.created_by || null,
     });
   },
 
@@ -222,6 +241,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       brand_discounts,
       editingBillId,
       editingBillNo,
+      editingBillCreatedAt,
+      editingBillCreatedBy,
     } = get();
 
     if (items.length === 0) {
@@ -244,8 +265,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       discount,
       total,
       payment_mode,
-      created_by: currentUser.id,
-      created_at: nowIso,
+      created_by: isEditing && editingBillCreatedBy ? editingBillCreatedBy : currentUser.id,
+      created_at: isEditing && editingBillCreatedAt ? editingBillCreatedAt : nowIso,
       updated_at: nowIso,
       sync_status: 'pending',
       brand_discounts: brand_discounts,
@@ -256,12 +277,14 @@ export const useCartStore = create<CartState>((set, get) => ({
       billRecord.edited_by = currentUser.id;
     }
 
-    const billItemsRecords: BillItem[] = items.map((item) => ({
+    // Consolidate duplicate items so each product only has ONE clean record
+    const consolidatedItems = consolidateBillItems(items);
+    const billItemsRecords: BillItem[] = consolidatedItems.map((item) => ({
       id: generateUUID(),
       bill_id: billId,
       product_id: item.product_id || null,
       product_name: item.product_name,
-      brand: item.brand || 'General',
+      brand: (item.brand || 'General').trim() || 'General',
       qty: item.qty,
       unit_price: item.unit_price,
       line_total: item.line_total,
@@ -283,15 +306,27 @@ export const useCartStore = create<CartState>((set, get) => ({
     // Dexie transaction: Atomic write bill + bill_items + outbox
     await db.transaction('rw', [db.bills, db.bill_items, db.outbox, db.products], async () => {
       if (isEditing) {
-        // Delete old items for this bill first
+        // 1. Restore stock for old items that were on this bill
+        const oldItems = await db.bill_items.where('bill_id').equals(billId).toArray();
+        for (const oldItem of oldItems) {
+          if (oldItem.product_id) {
+            const prod = await db.products.get(oldItem.product_id);
+            if (prod) {
+              const restoredStock = prod.stock + (oldItem.qty || 0);
+              await db.products.update(oldItem.product_id, { stock: restoredStock, updated_at: nowIso });
+            }
+          }
+        }
+        // 2. Delete old items for this bill in Dexie
         await db.bill_items.where('bill_id').equals(billId).delete();
       }
+
       await db.bills.put(billRecord);
       await db.bill_items.bulkPut(billItemsRecords);
       await db.outbox.put(outboxRecord);
 
-      // Decrement local product stock and queue outbox item for Supabase cloud sync
-      for (const item of items) {
+      // Decrement product stock for the new items
+      for (const item of billItemsRecords) {
         if (item.product_id) {
           const prod = await db.products.get(item.product_id);
           if (prod) {

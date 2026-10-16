@@ -1,6 +1,6 @@
 import React from 'react';
 import { Bill, BillItem, ShopSettings } from '@/types';
-import { formatINR, formatISTDate, formatNumber } from '@/lib/format';
+import { formatINR, formatISTDate, formatNumber, consolidateBillItems } from '@/lib/format';
 
 interface ReceiptCardProps {
   bill: Bill;
@@ -20,6 +20,11 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
   className = '',
 }) => {
   const is58mm = settings.paper_size === '58mm';
+
+  // Consolidate identical items by product so repeated items appear in one row with combined qty
+  const consolidatedItems = React.useMemo(() => {
+    return consolidateBillItems(items);
+  }, [items]);
 
   return (
     <div
@@ -75,7 +80,7 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
           </tr>
         </thead>
         <tbody className="divide-y divide-black/30">
-          {items.map((item, idx) => (
+          {consolidatedItems.map((item, idx) => (
             <tr key={idx} className="font-semibold align-top">
               <td className="py-1 pr-1 font-sans text-xs break-words max-w-0 w-[45%]">
                 <span className="font-bold text-black leading-tight block">{item.product_name}</span>
@@ -104,7 +109,7 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
             {Object.entries(bill.brand_discounts)
               .filter(([_, pct]) => pct > 0)
               .map(([bName, bPct]) => {
-                const bSub = items
+                const bSub = consolidatedItems
                   .filter((it) => (it.brand || 'Standard').toLowerCase() === bName.toLowerCase())
                   .reduce((sum, it) => sum + it.line_total, 0);
                 const bDisc = bSub > 0 ? Math.round((bSub * bPct) / 100) : 0;

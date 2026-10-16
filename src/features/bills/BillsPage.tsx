@@ -4,7 +4,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { useCartStore } from '@/features/billing/store';
 import { db, getShopSettings } from '@/db';
 import { Bill, BillItem, Profile, ShopSettings } from '@/types';
-import { formatINR, formatISTDate } from '@/lib/format';
+import { formatINR, formatISTDate, consolidateBillItems } from '@/lib/format';
 import { checkBillEditPermission } from '@/lib/permissions';
 import { ReceiptModal } from '@/features/billing/ReceiptModal';
 import { WhatsAppModal } from '@/features/billing/WhatsAppModal';
@@ -145,18 +145,21 @@ export const BillsPage: React.FC = () => {
   }, [bills, searchQuery, filterPaymentMode, filterStaff, dateRange]);
 
   const handleOpenReceipt = async (bill: Bill) => {
-    const items = await db.bill_items.where('bill_id').equals(bill.id).toArray();
+    const rawItems = await db.bill_items.where('bill_id').equals(bill.id).toArray();
+    const items = consolidateBillItems(rawItems);
     setViewingBill({ bill, items });
   };
 
   const handleOpenDetailModal = async (bill: Bill) => {
-    const items = await db.bill_items.where('bill_id').equals(bill.id).toArray();
+    const rawItems = await db.bill_items.where('bill_id').equals(bill.id).toArray();
+    const items = consolidateBillItems(rawItems);
     setViewingBill({ bill, items });
     setIsDetailModalOpen(true);
   };
 
   const handleEditBill = async (bill: Bill) => {
-    const items = await db.bill_items.where('bill_id').equals(bill.id).toArray();
+    const rawItems = await db.bill_items.where('bill_id').equals(bill.id).toArray();
+    const items = consolidateBillItems(rawItems);
     useCartStore.getState().loadBillForEdit(bill, items);
     navigate('/billing');
   };
