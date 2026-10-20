@@ -322,89 +322,93 @@ export const NewBillPage: React.FC = () => {
           </div>
 
           {/* Instant Search Results / Product List */}
-          <div className="flex-1 overflow-y-auto divide-y divide-border border border-border rounded bg-background min-h-0">
+          <div className="flex-1 overflow-y-auto divide-y divide-border border border-border rounded bg-background min-h-0 pb-36 md:pb-0">
             {searchResults.length === 0 ? (
               <div className="p-8 text-center text-sm text-text-muted">
                 <p className="font-semibold text-text">No crackers found</p>
                 <p className="text-xs text-text-muted mt-1">Try adjusting your search query, brand, or category</p>
               </div>
             ) : (
-              searchResults.map((prod, index) => {
-                const inCart = items.find((item) => item.product_id === prod.id);
-                const isSelected = index === highlightedIndex;
-                const brandName = prod.brand || 'Standard';
-                const isStandard = brandName === 'Standard';
+              <>
+                {searchResults.map((prod, index) => {
+                  const inCart = items.find((item) => item.product_id === prod.id);
+                  const isSelected = index === highlightedIndex;
+                  const brandName = prod.brand || 'Standard';
+                  const isStandard = brandName === 'Standard';
 
-                return (
-                  <div
-                    key={prod.id}
-                    className={`p-3 flex items-center justify-between transition-colors ${
-                      isSelected
-                        ? 'bg-accent/10 border-l-4 border-accent'
-                        : 'hover:bg-surface border-l-4 border-transparent'
-                    }`}
-                  >
+                  return (
                     <div
-                      className="min-w-0 pr-3 flex-1 cursor-pointer"
-                      onClick={() => handleProductSelect(prod, 1)}
+                      key={prod.id}
+                      className={`p-3 flex items-center justify-between transition-colors ${
+                        isSelected
+                          ? 'bg-accent/10 border-l-4 border-accent'
+                          : 'hover:bg-surface border-l-4 border-transparent'
+                      }`}
                     >
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-xs font-bold px-1.5 py-0.5 bg-surface border border-border rounded text-text">
-                          {prod.code}
-                        </span>
-                        <span className="text-sm font-semibold text-text truncate">
-                          {prod.name}
-                        </span>
-                        <span
-                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${
-                            isStandard
-                              ? 'bg-accent/10 text-accent border border-accent/20'
-                              : 'bg-surface text-text border border-border'
-                          }`}
-                        >
-                          <Tag size={10} />
-                          {brandName}
-                        </span>
-                        {inCart && (
-                          <span className="text-[11px] font-bold px-2 py-0.5 bg-accent text-white rounded">
-                            {inCart.qty} added
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-text-muted">
-                        <span className="font-medium text-text">{prod.category}</span>
-                        <span>•</span>
-                        <span
-                          className={`font-medium ${
-                            prod.stock <= 20 ? 'text-danger font-semibold' : 'text-text-muted'
-                          }`}
-                        >
-                          Stock: {prod.stock} {prod.unit}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="text-right">
-                        <span className="text-sm font-bold tabular-nums text-text">
-                          {formatINR(prod.price)}
-                        </span>
-                        <p className="text-[10px] text-text-muted">per {prod.unit}</p>
-                      </div>
-
-                      {/* Add Action Button */}
-                      <button
-                        type="button"
+                      <div
+                        className="min-w-0 pr-3 flex-1 cursor-pointer"
                         onClick={() => handleProductSelect(prod, 1)}
-                        className="px-3 py-1.5 text-xs font-semibold bg-accent text-white rounded hover:bg-accent-hover min-h-[32px] transition-colors"
-                        title={`Add ${prod.name} to bill`}
                       >
-                        Add
-                      </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold px-1.5 py-0.5 bg-surface border border-border rounded text-text">
+                            {prod.code}
+                          </span>
+                          <span className="text-sm font-semibold text-text truncate">
+                            {prod.name}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                              isStandard
+                                ? 'bg-accent/10 text-accent border border-accent/20'
+                                : 'bg-surface text-text border border-border'
+                            }`}
+                          >
+                            <Tag size={10} />
+                            {brandName}
+                          </span>
+                          {inCart && (
+                            <span className="text-[11px] font-bold px-2 py-0.5 bg-accent text-white rounded">
+                              {inCart.qty} added
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-xs text-text-muted">
+                          <span className="font-medium text-text">{prod.category}</span>
+                          <span>•</span>
+                          <span
+                            className={`font-medium ${
+                              prod.stock <= 20 ? 'text-danger font-semibold' : 'text-text-muted'
+                            }`}
+                          >
+                            Stock: {prod.stock} {prod.unit}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <span className="text-sm font-bold tabular-nums text-text">
+                            {formatINR(prod.price)}
+                          </span>
+                          <p className="text-[10px] text-text-muted">per {prod.unit}</p>
+                        </div>
+
+                        {/* Add Action Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleProductSelect(prod, 1)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-accent text-white rounded hover:bg-accent-hover min-h-[32px] transition-colors"
+                          title={`Add ${prod.name} to bill`}
+                        >
+                          Add
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })
+                  );
+                })}
+                {/* Mobile bottom clearance spacer so last product is never cut off by sticky bottom bar */}
+                <div className="h-36 md:hidden pointer-events-none" />
+              </>
             )}
           </div>
         </div>

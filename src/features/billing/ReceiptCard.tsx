@@ -26,6 +26,81 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
     return consolidateBillItems(items);
   }, [items]);
 
+  // Check if brand_discounts is configured on this bill
+  const hasBrandDiscounts =
+    Boolean(bill.brand_discounts) &&
+    Object.keys(bill.brand_discounts || {}).length > 0 &&
+    Object.values(bill.brand_discounts || {}).some((pct) => (pct || 0) > 0);
+
+  // Helper to get discount percentage strictly matching A4 invoice logic
+  const getBrandDiscountPercent = (bName: string): number => {
+    if (hasBrandDiscounts && bill.brand_discounts) {
+      const target = bName.trim().toLowerCase();
+      for (const [key, val] of Object.entries(bill.brand_discounts)) {
+        if (key.trim().toLowerCase() === target) {
+          return Math.max(0, Math.min(100, val || 0));
+        }
+      }
+      return 0;
+    }
+    if (bill.discount > 0 && bill.subtotal > 0) {
+      return Math.max(0, Math.min(100, Math.round((bill.discount / bill.subtotal) * 10000) / 100));
+    }
+    return 0;
+  };
+
+  // Group items by brand/category
+  const brandGroups = React.useMemo(() => {
+    const groupsMap = new Map<string, BillItem[]>();
+    consolidatedItems.forEach((item) => {
+      const b = (item.brand || 'General').trim() || 'General';
+      const list = groupsMap.get(b) || [];
+      list.push(item);
+      groupsMap.set(b, list);
+    });
+
+    const groups: Array<{
+      brandKey: string;
+      displayName: string;
+      items: BillItem[];
+      subtotal: number;
+      discountPct: number;
+      discountAmount: number;
+      netAmount: number;
+    }> = [];
+
+    // Sort to show Standard first, then other brands
+    const sortedKeys = Array.from(groupsMap.keys()).sort((a, b) => {
+      if (a.toLowerCase() === 'standard') return -1;
+      if (b.toLowerCase() === 'standard') return 1;
+      return a.localeCompare(b);
+    });
+
+    sortedKeys.forEach((bKey) => {
+      const gItems = groupsMap.get(bKey) || [];
+      const gSubtotal = gItems.reduce(
+        (acc, it) => acc + (it.line_total || it.qty * it.unit_price),
+        0
+      );
+      const discountPct = getBrandDiscountPercent(bKey);
+      const discountAmount =
+        discountPct > 0 ? Math.round(((gSubtotal * discountPct) / 100) * 100) / 100 : 0;
+      const netAmount = Math.max(0, Math.round((gSubtotal - discountAmount) * 100) / 100);
+
+      groups.push({
+        brandKey: bKey,
+        displayName: bKey.toUpperCase(),
+        items: gItems,
+        subtotal: gSubtotal,
+        discountPct,
+        discountAmount,
+        netAmount,
+      });
+    });
+
+    return groups;
+  }, [consolidatedItems, bill.brand_discounts, bill.discount, bill.subtotal]);
+
   return (
     <div
       id={id}
@@ -69,78 +144,82 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
 
       <div className="border-t-2 border-dashed border-black my-1.5" />
 
-      {/* Items Table */}
-      <table className="w-full text-left text-[11px] text-black">
-        <thead>
-          <tr className="border-b-2 border-black font-bold">
-            <th className="py-1 text-black font-bold">Item</th>
-            <th className="py-1 text-right text-black font-bold whitespace-nowrap px-1">Qty</th>
-            <th className="py-1 text-right text-black font-bold whitespace-nowrap px-1">Rate</th>
-            <th className="py-1 text-right text-black font-bold whitespace-nowrap pl-1">Total</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-black/30">
-          {consolidatedItems.map((item, idx) => (
-            <tr key={idx} className="font-semibold align-top">
-              <td className="py-1 pr-1 font-sans text-xs break-words max-w-0 w-[45%]">
-                <span className="font-bold text-black leading-tight block">{item.product_name}</span>
-              </td>
-              <td className="py-1 text-right tabular-nums text-black font-bold whitespace-nowrap px-1 align-top">{item.qty}</td>
-              <td className="py-1 text-right tabular-nums text-black font-bold whitespace-nowrap px-1 align-top">{formatNumber(item.unit_price)}</td>
-              <td className="py-1 text-right tabular-nums text-black font-black whitespace-nowrap pl-1 align-top">
-                {formatNumber(item.line_total)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* Brand / Category Wise Grouped Items */}
+      <div className="space-y-2">
+        {brandGroups.map((group) => (
+          <div key={group.brandKey} className="space-y-1">
+            {/* BRAND HEADER (e.g., STANDARD, NET, GENERAL) */}
+            <div className="text-center font-black uppercase text-xs py-0.5 border-t border-b border-black my-1 bg-black/5 tracking-wider">
+              --- {group.displayName} ---
+            </div>
+
+            {/* Items Table for this Category */}
+            <table className="w-full text-left text-[11px] text-black">
+              <thead>
+                <tr className="border-b border-black/40 font-bold">
+                  <th className="py-1 text-black font-bold">Item</th>
+                  <th className="py-1 text-right text-black font-bold whitespace-nowrap px-1">Qty</th>
+                  <th className="py-1 text-right text-black font-bold whitespace-nowrap px-1">Rate</th>
+                  <th className="py-1 text-right text-black font-bold whitespace-nowrap pl-1">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/20">
+                {group.items.map((item, idx) => (
+                  <tr key={idx} className="font-semibold align-top">
+                    <td className="py-1 pr-1 font-sans text-xs break-words max-w-0 w-[45%]">
+                      <span className="font-bold text-black leading-tight block">{item.product_name}</span>
+                    </td>
+                    <td className="py-1 text-right tabular-nums text-black font-bold whitespace-nowrap px-1 align-top">{item.qty}</td>
+                    <td className="py-1 text-right tabular-nums text-black font-bold whitespace-nowrap px-1 align-top">{formatNumber(item.unit_price)}</td>
+                    <td className="py-1 text-right tabular-nums text-black font-black whitespace-nowrap pl-1 align-top">
+                      {formatNumber(item.line_total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Category / Brand Subtotal & Discounts */}
+            <div className="pt-1 pb-1 border-b border-dashed border-black/40 text-[11px] font-bold text-black space-y-0.5">
+              <div className="flex justify-between">
+                <span>{group.displayName} Total:</span>
+                <span className="tabular-nums font-mono">{formatNumber(group.subtotal)}</span>
+              </div>
+              {group.discountPct > 0 && (
+                <>
+                  <div className="flex justify-between">
+                    <span>{group.displayName} Disc ({group.discountPct}%):</span>
+                    <span className="tabular-nums font-mono">- {formatNumber(group.discountAmount)}</span>
+                  </div>
+                  <div className="flex justify-between font-black">
+                    <span>{group.displayName} Net:</span>
+                    <span className="tabular-nums font-mono">{formatNumber(group.netAmount)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
 
       <div className="border-t-2 border-dashed border-black my-1.5" />
 
-      {/* Totals Section */}
+      {/* Final Grand Totals Section */}
       <div className="space-y-1 text-xs font-bold text-black">
         <div className="flex justify-between">
           <span>Subtotal:</span>
           <span className="tabular-nums font-mono text-black">{formatINR(bill.subtotal)}</span>
         </div>
 
-        {bill.brand_discounts && Object.entries(bill.brand_discounts).some(([_, pct]) => pct > 0) ? (
-          <div className="space-y-0.5 py-1 border-y border-dashed border-black text-[11px]">
-            {Object.entries(bill.brand_discounts)
-              .filter(([_, pct]) => pct > 0)
-              .map(([bName, bPct]) => {
-                const bSub = consolidatedItems
-                  .filter((it) => (it.brand || 'Standard').toLowerCase() === bName.toLowerCase())
-                  .reduce((sum, it) => sum + it.line_total, 0);
-                const bDisc = bSub > 0 ? Math.round((bSub * bPct) / 100) : 0;
-                return (
-                  <div key={bName} className="flex justify-between font-semibold">
-                    <span>{bName} Disc ({bPct}%):</span>
-                    <span className="tabular-nums font-mono">
-                      {bDisc > 0 ? `- ${formatINR(bDisc)}` : `${bPct}% off`}
-                    </span>
-                  </div>
-                );
-              })}
-            <div className="flex justify-between font-bold pt-0.5">
-              <span>Total Discount:</span>
-              <span className="tabular-nums font-mono">- {formatINR(bill.discount)}</span>
-            </div>
-          </div>
-        ) : bill.discount > 0 ? (
-          <div className="flex justify-between">
-            <span>
-              Standard Disc{' '}
-              {bill.subtotal > 0
-                ? `(${Math.round((bill.discount / bill.subtotal) * 100)}%)`
-                : ''}:
-            </span>
+        {bill.discount > 0 && (
+          <div className="flex justify-between text-[11px] font-semibold text-black">
+            <span>Total Discount:</span>
             <span className="tabular-nums font-mono">- {formatINR(bill.discount)}</span>
           </div>
-        ) : null}
+        )}
 
-        {/* Grand Total (Center Aligned, Bold & Prominent) */}
-        <div className="text-center font-black text-sm py-1.5 border-t-2 border-b-2 border-black text-black">
+        {/* Grand Total (Center Aligned, Bold & Prominent at Last) */}
+        <div className="text-center font-black text-sm py-1.5 border-t-2 border-b-2 border-black text-black my-1">
           <span>GRAND TOTAL: {formatINR(bill.total)}</span>
         </div>
 

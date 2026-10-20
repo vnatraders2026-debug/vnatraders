@@ -65,6 +65,7 @@ export const ProductsPage: React.FC = () => {
   // Drawer form state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [selectedProductForDetails, setSelectedProductForDetails] = useState<Product | null>(null);
 
   // Category Management Modal states (Add & Delete)
   const [isManageCategoriesOpen, setIsManageCategoriesOpen] = useState(false);
@@ -667,7 +668,7 @@ export const ProductsPage: React.FC = () => {
             <option value="all">All Brands</option>
             {availableBrandNames.map((b) => (
               <option key={b} value={b}>
-                Brand: {b}
+                {b}
               </option>
             ))}
           </Select>
@@ -681,7 +682,7 @@ export const ProductsPage: React.FC = () => {
             <option value="all">All Categories</option>
             {availableCategoryNames.map((c) => (
               <option key={c} value={c}>
-                Category: {c}
+                {c}
               </option>
             ))}
           </Select>
@@ -860,7 +861,62 @@ export const ProductsPage: React.FC = () => {
               return (
                 <TableRow key={p.id}>
                   <TableCell className="font-mono font-semibold text-accent">{p.code}</TableCell>
-                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <div
+                      className="cursor-pointer group"
+                      onClick={() => setSelectedProductForDetails(p)}
+                      title="Click to view details & actions"
+                    >
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-semibold text-text group-hover:text-accent transition-colors">
+                          {p.name}
+                        </span>
+                        <span className="md:hidden text-[10px] text-accent font-bold px-1.5 py-0.5 bg-accent/10 rounded">
+                          Tap actions
+                        </span>
+                      </div>
+
+                      {/* Mobile action buttons shown directly below the name */}
+                      <div className="flex md:hidden items-center gap-1.5 mt-2 pt-1 border-t border-border/40">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEdit(p);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded bg-accent text-white hover:bg-accent-hover shadow-subtle min-h-[28px]"
+                        >
+                          <Edit size={12} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleActive(p);
+                          }}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded border min-h-[28px] ${
+                            p.is_active
+                              ? 'text-danger bg-danger/10 border-danger/30 hover:bg-danger/20'
+                              : 'text-success bg-success/10 border-success/30 hover:bg-success/20'
+                          }`}
+                        >
+                          {p.is_active ? <EyeOff size={12} /> : <Eye size={12} />}
+                          <span>{p.is_active ? 'Deactivate' : 'Activate'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedProductForDetails(p);
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded bg-surface text-text-muted hover:text-text border border-border min-h-[28px]"
+                        >
+                          <span>Details</span>
+                        </button>
+                      </div>
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <span
                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold ${
@@ -1327,6 +1383,104 @@ export const ProductsPage: React.FC = () => {
           </div>
         </div>
       </Dialog>
+
+      {/* PRODUCT DETAILS & ACTIONS POP-UP MODAL (Touch-friendly & ideal for mobile) */}
+      {selectedProductForDetails && (
+        <Dialog
+          isOpen={Boolean(selectedProductForDetails)}
+          onClose={() => setSelectedProductForDetails(null)}
+          title={`Product: ${selectedProductForDetails.code}`}
+          maxWidth="md"
+        >
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-xs font-bold px-2 py-0.5 bg-accent/10 text-accent border border-accent/20 rounded">
+                  {selectedProductForDetails.code}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                    selectedProductForDetails.is_active
+                      ? 'bg-success-light text-success'
+                      : 'bg-danger-light text-danger'
+                  }`}
+                >
+                  {selectedProductForDetails.is_active ? 'Active' : 'Deactivated'}
+                </span>
+              </div>
+              <h3 className="text-base font-bold text-text mt-2">{selectedProductForDetails.name}</h3>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 bg-background p-3 rounded border border-border text-xs">
+              <div>
+                <span className="text-text-muted block">Brand:</span>
+                <span className="font-semibold text-text">{selectedProductForDetails.brand || 'Standard'}</span>
+              </div>
+              <div>
+                <span className="text-text-muted block">Category:</span>
+                <span className="font-semibold text-text">{selectedProductForDetails.category}</span>
+              </div>
+              <div>
+                <span className="text-text-muted block">Price:</span>
+                <span className="font-bold text-accent text-sm tabular-nums">
+                  {formatINR(selectedProductForDetails.price)} / {selectedProductForDetails.unit}
+                </span>
+              </div>
+              <div>
+                <span className="text-text-muted block">Stock:</span>
+                <span
+                  className={`font-bold text-sm tabular-nums ${
+                    selectedProductForDetails.stock <= 10 ? 'text-danger' : 'text-text'
+                  }`}
+                >
+                  {selectedProductForDetails.stock} {selectedProductForDetails.unit}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border">
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const prod = selectedProductForDetails;
+                  setSelectedProductForDetails(null);
+                  handleOpenEdit(prod);
+                }}
+                className="flex-1 min-h-[42px] font-bold"
+              >
+                <Edit size={16} />
+                <span>Edit Product</span>
+              </Button>
+
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  handleToggleActive(selectedProductForDetails);
+                  setSelectedProductForDetails((prev) =>
+                    prev ? { ...prev, is_active: !prev.is_active } : null
+                  );
+                }}
+                className={`flex-1 min-h-[42px] font-bold ${
+                  selectedProductForDetails.is_active
+                    ? 'text-danger border-danger/40 hover:bg-danger-light'
+                    : 'text-success border-success/40 hover:bg-success-light'
+                }`}
+              >
+                {selectedProductForDetails.is_active ? <EyeOff size={16} /> : <Eye size={16} />}
+                <span>{selectedProductForDetails.is_active ? 'Deactivate Product' : 'Activate Product'}</span>
+              </Button>
+
+              <Button
+                variant="secondary"
+                onClick={() => setSelectedProductForDetails(null)}
+                className="min-h-[42px]"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 };

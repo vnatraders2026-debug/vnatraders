@@ -124,63 +124,117 @@ export function buildEscPosReceipt(
   // 5. Divider
   bytes.push(...line(divider));
 
-  // 6. Column Headers (Left aligned like all standard retail bills)
-  bytes.push(...ESCPOS.ALIGN_LEFT);
-  bytes.push(...ESCPOS.BOLD_ON);
-  bytes.push(...line(tableRow('Item', 'Qty', 'Rate', 'Total', width)));
-  bytes.push(...ESCPOS.BOLD_OFF);
-  bytes.push(...line(divider));
+  // 6. Group Items by Brand / Category (Standard, Net, General, etc.)
+  const groupsMap = new Map<string, BillItem[]>();
+  items.forEach((item) => {
+    const b = (item.brand || 'General').trim() || 'General';
+    const list = groupsMap.get(b) || [];
+    list.push(item);
+    groupsMap.set(b, list);
+  });
 
-  // 7. Bill Items: Left aligned. First part of item name + Qty + Rate + Total on line 1, remaining item text on next line.
-  bytes.push(...ESCPOS.ALIGN_LEFT);
+  const hasBrandDiscounts =
+    Boolean(bill.brand_discounts) &&
+    Object.keys(bill.brand_discounts || {}).length > 0 &&
+    Object.values(bill.brand_discounts || {}).some((pct) => (pct || 0) > 0);
+
+  const getBrandDiscountPercent = (bName: string): number => {
+    if (hasBrandDiscounts && bill.brand_discounts) {
+      const target = bName.trim().toLowerCase();
+      for (const [key, val] of Object.entries(bill.brand_discounts)) {
+        if (key.trim().toLowerCase() === target) {
+          return Math.max(0, Math.min(100, val || 0));
+        }
+      }
+      return 0;
+    }
+    if (bill.discount > 0 && bill.subtotal > 0) {
+      return Math.max(0, Math.min(100, Math.round((bill.discount / bill.subtotal) * 10000) / 100));
+    }
+    return 0;
+  };
+
+  const sortedKeys = Array.from(groupsMap.keys()).sort((a, b) => {
+    if (a.toLowerCase() === 'standard') return -1;
+    if (b.toLowerCase() === 'standard') return 1;
+    return a.localeCompare(b);
+  });
+
   const itemColWidth = is80mm ? 22 : 16;
   const qtyWidth = 4;
   const rateWidth = is80mm ? 8 : 7;
   const totalWidth = is80mm ? 9 : 8;
 
-  for (const it of items) {
-    const totalStr = it.line_total.toFixed(2);
-    const rateStr = it.unit_price.toFixed(2);
-    const qtyStr = it.qty.toString();
+  for (const bKey of sortedKeys) {
+    const groupItems = groupsMap.get(bKey) || [];
+    const groupName = bKey.toUpperCase();
 
-    // Line 1: Item name (first part) + Qty + Rate + Total on the SAME line
-    const firstPart = it.product_name.slice(0, itemColWidth).padEnd(itemColWidth, ' ');
-    const firstRow = `${firstPart} ${qtyStr.padStart(qtyWidth, ' ')} ${rateStr.padStart(rateWidth, ' ')} ${totalStr.padStart(totalWidth, ' ')}`;
-    bytes.push(...line(firstRow));
+    // Category / Brand Header (Center aligned)
+    bytes.push(...ESCPOS.ALIGN_CENTER);
+    bytes.push(...ESCPOS.BOLD_ON);
+    bytes.push(...line(`--- ${groupName} ---`));
+    bytes.push(...ESCPOS.BOLD_OFF);
 
-    // If item name exceeds itemColWidth, remaining text goes to the next line(s)
-    if (it.product_name.length > itemColWidth) {
-      let remaining = it.product_name.slice(itemColWidth).trim();
-      while (remaining.length > 0) {
-        const chunk = remaining.slice(0, width - 2);
-        remaining = remaining.slice(width - 2).trim();
-        bytes.push(...line(`  ${chunk}`));
+    // Column Headers for group
+    bytes.push(...ESCPOS.ALIGN_LEFT);
+    bytes.push(...ESCPOS.BOLD_ON);
+    bytes.push(...line(tableRow('Item', 'Qty', 'Rate', 'Total', width)));
+    bytes.push(...ESCPOS.BOLD_OFF);
+    bytes.push(...line(divider));
+
+    // Items for this group
+    bytes.push(...ESCPOS.ALIGN_LEFT);
+    for (const it of groupItems) {
+      const totalStr = it.line_total.toFixed(2);
+      const rateStr = it.unit_price.toFixed(2);
+      const qtyStr = it.qty.toString();
+
+      const firstPart = it.product_name.slice(0, itemColWidth).padEnd(itemColWidth, ' ');
+      const firstRow = `${firstPart} ${qtyStr.padStart(qtyWidth, ' ')} ${rateStr.padStart(rateWidth, ' ')} ${totalStr.padStart(totalWidth, ' ')}`;
+      bytes.push(...line(firstRow));
+
+      if (it.product_name.length > itemColWidth) {
+        let remaining = it.product_name.slice(itemColWidth).trim();
+        while (remaining.length > 0) {
+          const chunk = remaining.slice(0, width - 2);
+          remaining = remaining.slice(width - 2).trim();
+          bytes.push(...line(`  ${chunk}`));
+        }
       }
     }
+
+    // Group Subtotal & Discounts
+    const gSubtotal = groupItems.reduce(
+      (acc, it) => acc + (it.line_total || it.qty * it.unit_price),
+      0
+    );
+    const discountPct = getBrandDiscountPercent(bKey);
+    const discountAmount =
+      discountPct > 0 ? Math.round(((gSubtotal * discountPct) / 100) * 100) / 100 : 0;
+    const netAmount = Math.max(0, Math.round((gSubtotal - discountAmount) * 100) / 100);
+
+    bytes.push(...line('- '.repeat(Math.floor(width / 2))));
+    bytes.push(...line(padColumns(`${groupName} Total:`, `Rs. ${gSubtotal.toFixed(2)}`, width)));
+    if (discountPct > 0) {
+      bytes.push(
+        ...line(
+          padColumns(
+            `${groupName} Disc (${discountPct}%):`,
+            `- Rs. ${discountAmount.toFixed(2)}`,
+            width
+          )
+        )
+      );
+      bytes.push(...line(padColumns(`${groupName} Net:`, `Rs. ${netAmount.toFixed(2)}`, width)));
+    }
+    bytes.push(...line(divider));
   }
 
-  // 8. Divider
-  bytes.push(...line(divider));
-
-  // 9. Subtotal & Explicit Discount Breakdown (Standard, Others, etc.)
+  // 7. Overall Subtotal & Total Discount
+  bytes.push(...ESCPOS.ALIGN_LEFT);
   bytes.push(...line(padColumns('Subtotal:', `Rs. ${bill.subtotal.toFixed(2)}`, width)));
-
-  if (bill.brand_discounts && Object.entries(bill.brand_discounts).some(([_, pct]) => pct > 0)) {
-    for (const [bName, bPct] of Object.entries(bill.brand_discounts)) {
-      if (bPct > 0) {
-        const bSub = items
-          .filter((it) => (it.brand || 'Standard').toLowerCase() === bName.toLowerCase())
-          .reduce((sum, it) => sum + it.line_total, 0);
-        const bDisc = bSub > 0 ? Math.round((bSub * bPct) / 100) : 0;
-        const discVal = bDisc > 0 ? `- Rs. ${bDisc.toFixed(2)}` : `${bPct}% off`;
-        bytes.push(...line(padColumns(`${bName} Disc (${bPct}%):`, discVal, width)));
-      }
-    }
+  if (bill.discount > 0) {
     bytes.push(...line(padColumns('Total Discount:', `- Rs. ${bill.discount.toFixed(2)}`, width)));
-  } else if (bill.discount > 0) {
-    const pct = bill.subtotal > 0 ? Math.round((bill.discount / bill.subtotal) * 100) : 0;
-    const label = pct > 0 ? `Standard Disc (${pct}%):` : 'Discount:';
-    bytes.push(...line(padColumns(label, `- Rs. ${bill.discount.toFixed(2)}`, width)));
   }
 
   // 10. Grand Total (Center aligned, Big Bold!)
