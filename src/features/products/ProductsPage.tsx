@@ -36,6 +36,7 @@ import {
   X,
   AlertTriangle,
   FolderPlus,
+  Info,
 } from 'lucide-react';
 
 const productSchema = z.object({
@@ -865,29 +866,24 @@ export const ProductsPage: React.FC = () => {
                     <div
                       className="cursor-pointer group"
                       onClick={() => setSelectedProductForDetails(p)}
-                      title="Click to view details & actions"
+                      title="Click to view product details"
                     >
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-semibold text-text group-hover:text-accent transition-colors">
-                          {p.name}
-                        </span>
-                        <span className="md:hidden text-[10px] text-accent font-bold px-1.5 py-0.5 bg-accent/10 rounded">
-                          Tap actions
-                        </span>
-                      </div>
+                      <span className="font-semibold text-text group-hover:text-accent transition-colors block">
+                        {p.name}
+                      </span>
 
-                      {/* Mobile action buttons shown directly below the name */}
-                      <div className="flex md:hidden items-center gap-1.5 mt-2 pt-1 border-t border-border/40">
+                      {/* Mobile icon-only action buttons directly below the name */}
+                      <div className="flex md:hidden items-center gap-1.5 mt-1.5 pt-1 border-t border-border/30">
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleOpenEdit(p);
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded bg-accent text-white hover:bg-accent-hover shadow-subtle min-h-[28px]"
+                          className="p-1 rounded bg-accent/10 text-accent hover:bg-accent hover:text-white border border-accent/20 transition-colors"
+                          title="Edit product"
                         >
-                          <Edit size={12} />
-                          <span>Edit</span>
+                          <Edit size={14} />
                         </button>
                         <button
                           type="button"
@@ -895,14 +891,14 @@ export const ProductsPage: React.FC = () => {
                             e.stopPropagation();
                             handleToggleActive(p);
                           }}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded border min-h-[28px] ${
+                          className={`p-1 rounded border transition-colors ${
                             p.is_active
-                              ? 'text-danger bg-danger/10 border-danger/30 hover:bg-danger/20'
-                              : 'text-success bg-success/10 border-success/30 hover:bg-success/20'
+                              ? 'text-danger bg-danger/10 border-danger/20 hover:bg-danger hover:text-white'
+                              : 'text-success bg-success/10 border-success/20 hover:bg-success hover:text-white'
                           }`}
+                          title={p.is_active ? 'Deactivate product' : 'Activate product'}
                         >
-                          {p.is_active ? <EyeOff size={12} /> : <Eye size={12} />}
-                          <span>{p.is_active ? 'Deactivate' : 'Activate'}</span>
+                          {p.is_active ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
                         <button
                           type="button"
@@ -910,9 +906,10 @@ export const ProductsPage: React.FC = () => {
                             e.stopPropagation();
                             setSelectedProductForDetails(p);
                           }}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded bg-surface text-text-muted hover:text-text border border-border min-h-[28px]"
+                          className="p-1 rounded bg-surface text-text-muted hover:text-text border border-border transition-colors"
+                          title="View product details"
                         >
-                          <span>Details</span>
+                          <Info size={14} />
                         </button>
                       </div>
                     </div>

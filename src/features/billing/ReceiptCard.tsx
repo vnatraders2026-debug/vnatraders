@@ -7,6 +7,7 @@ interface ReceiptCardProps {
   items: BillItem[];
   settings: ShopSettings;
   billedBy?: string;
+  showScanPay?: boolean;
   id?: string;
   className?: string;
 }
@@ -16,6 +17,7 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
   items,
   settings,
   billedBy,
+  showScanPay = true,
   id = 'receipt-print-area',
   className = '',
 }) => {
@@ -233,6 +235,34 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
           )}
         </div>
       </div>
+
+      {/* Scan and Pay QR Section */}
+      {showScanPay && (
+        <>
+          <div className="border-t-2 border-dashed border-black my-1.5" />
+          <div className="text-center py-1 space-y-1">
+            <div className="text-[11px] font-black uppercase tracking-wider text-black">
+              --- SCAN AND PAY ---
+            </div>
+            <div className="flex justify-center items-center py-1">
+              <img
+                src="/qr-vna.jpeg"
+                alt="Scan and Pay QR"
+                className="w-28 h-28 sm:w-32 sm:h-32 object-contain mx-auto print:block border border-black p-1 bg-white"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.src.endsWith('qr-vna.jpg')) {
+                    target.src = '/qr-vna.jpg';
+                  }
+                }}
+              />
+            </div>
+            <p className="text-[10px] font-black text-black uppercase tracking-tight">
+              Scan and Pay with Any UPI App
+            </p>
+          </div>
+        </>
+      )}
 
       <div className="border-t-2 border-dashed border-black my-1.5" />
 

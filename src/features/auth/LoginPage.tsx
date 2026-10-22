@@ -103,9 +103,9 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-text mb-1">
-                Password
-              </label>
+                <label className="block text-xs font-medium text-text mb-1">
+                  Password
+                </label>
               <div className="relative">
                 <Lock
                   size={16}

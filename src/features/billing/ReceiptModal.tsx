@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Bill, BillItem, ShopSettings, Profile } from '@/types';
 import { checkBillEditPermission, formatRemainingTime } from '@/lib/permissions';
-import { Printer, PlusCircle, Edit3, X, MessageSquare, Bluetooth, Zap, FileText } from 'lucide-react';
+import { Printer, PlusCircle, Edit3, X, MessageSquare, Bluetooth, Zap, FileText, QrCode } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { directPrinterService, PrinterStatus } from '@/lib/printer/directPrinterService';
@@ -37,6 +37,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const [paperMode, setPaperMode] = useState<'thermal' | 'a4'>(
     settings.paper_size === 'a4' ? 'a4' : 'thermal'
   );
+  const [showScanPay, setShowScanPay] = useState(true);
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [printerStatus, setPrinterStatus] = useState<PrinterStatus>(directPrinterService.getStatus());
@@ -72,7 +73,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     if (paperMode === 'thermal' && directPrinterService.isConnected()) {
       setIsDirectPrinting(true);
       try {
-        const res = await directPrinterService.printBillDirect(bill, items, settings, billedUserName);
+        const res = await directPrinterService.printBillDirect(bill, items, settings, billedUserName, showScanPay);
         toast(`Directly printed to ${res.printerName || 'Thermal POS'}!`, 'success');
         return;
       } catch (err: any) {
@@ -169,6 +170,25 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               </button>
             </div>
 
+            {/* Scan and Pay QR Toggle */}
+            <label
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-semibold cursor-pointer select-none transition-colors ${
+                showScanPay
+                  ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+                  : 'bg-background text-text-muted border-border hover:text-text'
+              }`}
+              title="Include Scan and Pay QR Code on bill"
+            >
+              <input
+                type="checkbox"
+                checked={showScanPay}
+                onChange={(e) => setShowScanPay(e.target.checked)}
+                className="rounded border-border text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+              />
+              <QrCode size={13} />
+              <span>Scan & Pay QR</span>
+            </label>
+
             <div className="flex items-center gap-2">
               {paperMode === 'thermal' && (
                 printerStatus.isConnected ? (
@@ -206,6 +226,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 items={items}
                 settings={settings}
                 billedBy={billedUserName}
+                showScanPay={showScanPay}
                 id="a4-invoice-print-area"
                 className="w-full"
               />
@@ -215,6 +236,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 items={items}
                 settings={settings}
                 billedBy={billedUserName}
+                showScanPay={showScanPay}
                 id="receipt-print-area"
                 className="w-full"
               />

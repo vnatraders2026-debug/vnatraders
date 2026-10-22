@@ -7,6 +7,7 @@ interface A4InvoiceCardProps {
   items: BillItem[];
   settings: ShopSettings;
   billedBy?: string;
+  showScanPay?: boolean;
   id?: string;
   className?: string;
 }
@@ -26,6 +27,7 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
   items,
   settings,
   billedBy: _billedBy,
+  showScanPay = true,
   id = 'a4-invoice-print-area',
   className = '',
 }) => {
@@ -322,29 +324,57 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
             {numberToWordsINR(netAmount)}
           </div>
 
-          {/* Bottom Area: Tax, Terms, Signatures */}
-          <div className="mt-4 space-y-3">
-            {/* Tax Breakdown (Bottom Left) */}
-            <div className="text-xs text-slate-800 font-medium space-y-0.5 px-2">
-              <div>
-                CGST 9.00 % on {formatNumber(taxable)} :{' '}
-                <span className="font-semibold tabular-nums">{formatNumber(cgst)}</span>
-              </div>
-              <div>
-                SGST 9.00 % on {formatNumber(taxable)} :{' '}
-                <span className="font-semibold tabular-nums">{formatNumber(sgst)}</span>
-              </div>
-            </div>
+          {/* Bottom Area: Tax, Terms, Scan & Pay, Signatures */}
+          <div className="mt-3 space-y-2.5">
+            <div className="flex items-stretch justify-between gap-3">
+              {/* Left Column: Tax & Terms */}
+              <div className="flex-1 flex flex-col justify-between space-y-2">
+                {/* Tax Breakdown (Bottom Left) */}
+                <div className="text-xs text-slate-800 font-medium space-y-0.5 px-1">
+                  <div>
+                    CGST 9.00 % on {formatNumber(taxable)} :{' '}
+                    <span className="font-semibold tabular-nums">{formatNumber(cgst)}</span>
+                  </div>
+                  <div>
+                    SGST 9.00 % on {formatNumber(taxable)} :{' '}
+                    <span className="font-semibold tabular-nums">{formatNumber(sgst)}</span>
+                  </div>
+                </div>
 
-            {/* Terms & Conditions Box */}
-            <div className="border border-slate-700/80 rounded p-2 text-[11px] sm:text-xs font-semibold text-slate-900 space-y-0.5 leading-tight">
-              <div>Please Collect Invoice at the Time of Delivery</div>
-              <div>The above rates are subject to change under extra ordinary circumstances</div>
-              <div>Goods will be despatched CASH and CARRY basis only</div>
+                {/* Terms & Conditions Box */}
+                <div className="border border-slate-700/80 rounded p-2 text-[11px] sm:text-xs font-semibold text-slate-900 space-y-0.5 leading-tight">
+                  <div>Please Collect Invoice at the Time of Delivery</div>
+                  <div>The above rates are subject to change under extra ordinary circumstances</div>
+                  <div>Goods will be despatched CASH and CARRY basis only</div>
+                </div>
+              </div>
+
+              {/* Right Column: Scan & Pay QR Box */}
+              {showScanPay && (
+                <div className="w-32 sm:w-36 shrink-0 flex flex-col items-center justify-center p-2 border border-slate-700/80 rounded bg-white text-center">
+                  <span className="text-[11px] font-black text-slate-900 uppercase tracking-wider mb-1">
+                    Scan and Pay
+                  </span>
+                  <img
+                    src="/qr-vna.jpeg"
+                    alt="Scan and Pay QR"
+                    className="w-24 h-24 object-contain print:block"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (!target.src.endsWith('qr-vna.jpg')) {
+                        target.src = '/qr-vna.jpg';
+                      }
+                    }}
+                  />
+                  <span className="text-[9px] font-bold text-slate-700 mt-1 uppercase tracking-tight">
+                    UPI / GPay / PhonePe
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Signatures */}
-            <div className="flex justify-between items-end pt-5 px-2 text-xs sm:text-[13px] font-bold text-slate-900">
+            <div className="flex justify-between items-end pt-3 px-2 text-xs sm:text-[13px] font-bold text-slate-900">
               <div>Party's Signature</div>
               <div>For {shopName}</div>
             </div>

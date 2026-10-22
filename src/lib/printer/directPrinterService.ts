@@ -259,13 +259,14 @@ class DirectPrinterService {
     bill: Bill,
     items: BillItem[],
     settings: ShopSettings,
-    billedBy?: string
+    billedBy?: string,
+    showScanPay = true
   ): Promise<{ success: boolean; printerName?: string }> {
     if (!this.status.isConnected) {
       return { success: false };
     }
 
-    const bytes = buildEscPosReceipt(bill, items, settings, billedBy);
+    const bytes = buildEscPosReceipt(bill, items, settings, billedBy, showScanPay);
     await this.printBytes(bytes);
     return { success: true, printerName: this.status.deviceName };
   }

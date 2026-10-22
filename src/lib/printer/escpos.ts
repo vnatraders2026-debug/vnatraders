@@ -74,7 +74,8 @@ export function buildEscPosReceipt(
   bill: Bill,
   items: BillItem[],
   settings: ShopSettings,
-  billedBy?: string
+  billedBy?: string,
+  showScanPay = true
 ): Uint8Array {
   const is80mm = settings.paper_size === '80mm';
   // 38 columns for 58mm thermal printers, 46 columns for 80mm thermal printers
@@ -257,7 +258,17 @@ export function buildEscPosReceipt(
   }
   bytes.push(...line(divider));
 
-  // 12. Footer Message (Center aligned)
+  // 12. Scan & Pay Section (Center aligned)
+  if (showScanPay) {
+    bytes.push(...ESCPOS.ALIGN_CENTER);
+    bytes.push(...ESCPOS.BOLD_ON);
+    bytes.push(...line('--- SCAN AND PAY ---'));
+    bytes.push(...ESCPOS.BOLD_OFF);
+    bytes.push(...line('Scan with UPI / GPay / PhonePe'));
+    bytes.push(...line(divider));
+  }
+
+  // 13. Footer Message (Center aligned)
   bytes.push(...ESCPOS.ALIGN_CENTER);
   bytes.push(0x0a);
   const footerText = settings.receipt_footer || 'Thank you for choosing VNA Traders!';
