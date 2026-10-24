@@ -1,21 +1,26 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { VNA_LOGO_DATA_URI, VNA_LOGO_SRC } from '@/assets/vnaLogoDataUri';
 
 interface VnaLogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   showText?: boolean;
   className?: string;
+  imageClassName?: string;
 }
 
 export const VnaLogo: React.FC<VnaLogoProps> = ({
   size = 'md',
   showText = true,
   className = '',
+  imageClassName = '',
 }) => {
+  const [currentSrc, setCurrentSrc] = useState<string>(VNA_LOGO_DATA_URI);
+
   const iconSizes = {
-    sm: 24,
-    md: 32,
-    lg: 40,
-    xl: 48,
+    sm: 28,
+    md: 36,
+    lg: 44,
+    xl: 60,
   };
 
   const textSizes = {
@@ -29,34 +34,21 @@ export const VnaLogo: React.FC<VnaLogoProps> = ({
 
   return (
     <div className={`flex items-center gap-2.5 select-none ${className}`}>
-      {/* VNA Modern Geometric Cracker Burst Emblem */}
+      {/* Official VNA Shield Emblem Logo */}
       <div
-        className="shrink-0 flex items-center justify-center rounded bg-accent text-white shadow-subtle overflow-hidden"
+        className="shrink-0 flex items-center justify-center rounded-lg bg-white overflow-hidden shadow-subtle border border-slate-200/80"
         style={{ width: px, height: px }}
       >
-        <svg
-          viewBox="0 0 48 48"
-          width={px}
-          height={px}
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          {/* Solid Flat Geometric Emblem for VNA */}
-          <rect width="48" height="48" rx="6" fill="#C2410C" />
-          {/* Modern stylised V monogram & spark star */}
-          <path
-            d="M12 14L24 36L36 14H30L24 26L18 14H12Z"
-            fill="#FFFFFF"
-          />
-          {/* Golden/White fireworks spark accents */}
-          <circle cx="24" cy="11" r="2.5" fill="#FFFFFF" />
-          <path
-            d="M24 16V19M21 17.5L22.5 19M27 17.5L25.5 19"
-            stroke="#FFFFFF"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
+        <img
+          src={currentSrc}
+          alt="VNA Traders Logo"
+          className={`w-full h-full object-contain p-0.5 ${imageClassName}`}
+          onError={() => {
+            if (currentSrc !== VNA_LOGO_SRC) {
+              setCurrentSrc(VNA_LOGO_SRC);
+            }
+          }}
+        />
       </div>
 
       {showText && (

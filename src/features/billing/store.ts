@@ -53,6 +53,16 @@ interface CartState {
   saveBill: (currentUser: Profile) => Promise<{ bill: Bill; items: BillItem[] }>;
 }
 
+function resolveItemBrand(brand?: string | null, category?: string | null): string {
+  const b = (brand || '').trim();
+  if (b) return b;
+  const c = (category || '').trim();
+  if (c && (c.toLowerCase() === 'standard' || c.toLowerCase() === 'net' || c.toLowerCase() === 'general')) {
+    return c;
+  }
+  return c || 'Standard';
+}
+
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   customer_name: '',
@@ -66,7 +76,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   editingBillCreatedBy: null,
 
   addItem: (product: Product, quantity: number = 1) => {
-    const brand = (product.brand || 'Standard').trim();
+    const brand = resolveItemBrand(product.brand, product.category);
     set((state) => {
       // Find existing item by product_id, code, or exact name + unit price
       const existingIndex = state.items.findIndex(
@@ -118,8 +128,11 @@ export const useCartStore = create<CartState>((set, get) => ({
     set((state) => ({
       items: state.items.map((item) => {
         const prod = prodMap.get(item.product_id) || (item.code ? prodMap.get(item.code.toUpperCase()) : null);
-        if (prod && prod.brand && prod.brand !== item.brand) {
-          return { ...item, brand: prod.brand };
+        if (prod) {
+          const effectiveBrand = resolveItemBrand(prod.brand, prod.category);
+          if (effectiveBrand && effectiveBrand !== item.brand) {
+            return { ...item, brand: effectiveBrand };
+          }
         }
         return item;
       }),
@@ -202,7 +215,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       product_id: bi.product_id || '',
       code: '',
       product_name: bi.product_name,
-      brand: (bi.brand || 'General').trim() || 'General',
+      brand: resolveItemBrand(bi.brand),
       unit: 'box',
       unit_price: Number(bi.unit_price) || 0,
       qty: Number(bi.qty) || 0,
@@ -284,7 +297,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       bill_id: billId,
       product_id: item.product_id || null,
       product_name: item.product_name,
-      brand: (item.brand || 'General').trim() || 'General',
+      brand: resolveItemBrand(item.brand),
       qty: item.qty,
       unit_price: item.unit_price,
       line_total: item.line_total,

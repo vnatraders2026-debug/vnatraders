@@ -91,7 +91,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     if (autoPrint) {
       const printTimer = setTimeout(() => {
         handlePrint();
-      }, 350);
+      }, 450);
       return () => clearTimeout(printTimer);
     }
   }, [autoPrint]);

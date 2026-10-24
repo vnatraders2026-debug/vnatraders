@@ -18,8 +18,8 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
-      includeAssets: ['favicon.svg', 'robots.txt'],
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.svg', 'robots.txt', 'qr-vna.jpeg', 'qr-vna.jpg', 'vna-logo.jpeg', 'vna-logo.jpg'],
       manifest: {
         name: 'VNA Traders - Billing System',
         short_name: 'VNA Traders',
@@ -45,7 +45,7 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
-        globPatterns: ['**/*.{js,css,html,svg,woff,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,woff,woff2,png,jpg,jpeg}'],
         runtimeCaching: [], // No network caching for Supabase; Dexie handles all data offline
       },
     }),

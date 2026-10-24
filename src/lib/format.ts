@@ -326,7 +326,7 @@ export function consolidateBillItems<
   const map = new Map<string, T>();
 
   for (const item of items) {
-    const brand = (item.brand || 'General').trim() || 'General';
+    const brand = (item.brand || 'Standard').trim() || 'Standard';
     const normName = (item.product_name || '').trim().toLowerCase();
     const unitPrice = Number(item.unit_price) || 0;
     // Matching key: normalized name + unit price + brand

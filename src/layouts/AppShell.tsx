@@ -13,7 +13,7 @@ export const AppShell: React.FC = () => {
 
   // PWA update hook
   const {
-    needRefresh: [needRefresh, setNeedRefresh],
+    needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegistered(r: ServiceWorkerRegistration | undefined) {
@@ -49,28 +49,31 @@ export const AppShell: React.FC = () => {
 
       {/* Main Content Area */}
       <div className={`flex-1 flex flex-col min-w-0 ${isBilling ? 'pb-0' : 'pb-16 sm:pb-0'}`}>
-        {/* PWA Update Banner */}
+        {/* Mandatory PWA Update Modal: Blocks stale cached app execution */}
         {needRefresh && (
-          <div className="bg-accent text-white px-4 py-2.5 flex items-center justify-between text-xs sm:text-sm font-medium sticky top-0 z-40">
-            <div className="flex items-center gap-2">
-              <RefreshCw size={16} />
-              <span>An application update is available.</span>
-            </div>
-            <div className="flex items-center gap-2">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+            <div className="bg-surface border-2 border-accent rounded-lg shadow-2xl p-6 max-w-md w-full text-center space-y-4 animate-in fade-in zoom-in-95 duration-150">
+              <div className="w-14 h-14 rounded-full bg-accent/10 text-accent flex items-center justify-center mx-auto">
+                <RefreshCw size={28} className="animate-spin" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-lg font-bold text-text">
+                  Mandatory Update Required
+                </h2>
+                <p className="text-xs sm:text-sm text-text-muted leading-relaxed">
+                  A critical system update is ready with the latest bill formatting, Scan &amp; Pay QR code, and printing fixes. Please update now to continue.
+                </p>
+              </div>
               <Button
-                variant="secondary"
-                size="sm"
-                className="bg-white text-accent hover:bg-white/90 min-h-[32px] py-1 text-xs"
+                variant="primary"
+                fullWidth
+                size="md"
                 onClick={() => updateServiceWorker(true)}
+                className="py-3 text-sm font-bold bg-accent hover:bg-accent/90 text-white shadow-md gap-2"
               >
-                Update
+                <RefreshCw size={16} />
+                <span>Update &amp; Reload Application</span>
               </Button>
-              <button
-                onClick={() => setNeedRefresh(false)}
-                className="text-white hover:text-white/80 text-xs px-2 py-1"
-              >
-                Dismiss
-              </button>
             </div>
           </div>
         )}

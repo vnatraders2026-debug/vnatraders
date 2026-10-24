@@ -126,12 +126,16 @@ export function buildEscPosReceipt(
   bytes.push(...line(divider));
 
   // 6. Group Items by Brand / Category (Standard, Net, General, etc.)
-  const groupsMap = new Map<string, BillItem[]>();
+  const groupsMap = new Map<string, { displayName: string; items: BillItem[] }>();
   items.forEach((item) => {
-    const b = (item.brand || 'General').trim() || 'General';
-    const list = groupsMap.get(b) || [];
-    list.push(item);
-    groupsMap.set(b, list);
+    const rawBrand = (item.brand || 'Standard').trim() || 'Standard';
+    const normKey = rawBrand.toLowerCase();
+    const existing = groupsMap.get(normKey);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      groupsMap.set(normKey, { displayName: rawBrand.toUpperCase(), items: [item] });
+    }
   });
 
   const hasBrandDiscounts =
@@ -156,8 +160,8 @@ export function buildEscPosReceipt(
   };
 
   const sortedKeys = Array.from(groupsMap.keys()).sort((a, b) => {
-    if (a.toLowerCase() === 'standard') return -1;
-    if (b.toLowerCase() === 'standard') return 1;
+    if (a === 'standard') return -1;
+    if (b === 'standard') return 1;
     return a.localeCompare(b);
   });
 
@@ -167,8 +171,9 @@ export function buildEscPosReceipt(
   const totalWidth = is80mm ? 9 : 8;
 
   for (const bKey of sortedKeys) {
-    const groupItems = groupsMap.get(bKey) || [];
-    const groupName = bKey.toUpperCase();
+    const entry = groupsMap.get(bKey)!;
+    const groupItems = entry.items;
+    const groupName = entry.displayName;
 
     // Category / Brand Header (Center aligned)
     bytes.push(...ESCPOS.ALIGN_CENTER);

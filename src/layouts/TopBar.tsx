@@ -4,8 +4,9 @@ import { useSync } from '@/sync/useSync';
 import { syncService } from '@/sync/syncService';
 import { useFullscreen } from '@/lib/fullscreen';
 import { useToast } from '@/components/ui/Toast';
-import { PlusCircle, Menu, RefreshCw, Maximize, Minimize } from 'lucide-react';
+import { PlusCircle, Menu, RefreshCw, Maximize, Minimize, DownloadCloud } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { forceAppUpdate } from '@/lib/appUpdate';
 
 import { VnaLogo } from '@/components/VnaLogo';
 
@@ -115,6 +116,21 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleMobileMenu, title }) => 
         >
           <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
           <span className="hidden md:inline">{isRefreshing ? 'Refreshing...' : 'Refresh Cloud'}</span>
+        </Button>
+
+        {/* Force Application Update Button */}
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            toast('Updating application to latest release...', 'info');
+            forceAppUpdate();
+          }}
+          className="min-h-[36px] py-1 text-xs border-border hover:bg-background gap-1.5 font-medium text-text-muted hover:text-text"
+          title="Force update application to latest version & reload"
+        >
+          <DownloadCloud size={14} className="text-accent" />
+          <span className="hidden md:inline">Update App</span>
         </Button>
 
         {/* Fullscreen Toggle Button */}

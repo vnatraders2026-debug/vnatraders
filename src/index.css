@@ -132,6 +132,18 @@
     print-color-adjust: exact !important;
   }
 
+  /* Ensure QR code and images in receipt and A4 invoice are 100% visible and un-clipped in print */
+  #receipt-print-area img,
+  #a4-invoice-print-area img {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    image-rendering: auto !important;
+    max-width: 100% !important;
+  }
+
   /* For 58mm compact thermal rolls */
   #receipt-print-area.receipt-58mm {
     max-width: 100% !important;

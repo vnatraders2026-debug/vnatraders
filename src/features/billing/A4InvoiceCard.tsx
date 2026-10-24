@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bill, BillItem, ShopSettings } from '@/types';
 import { formatNumber, formatDateDMY, numberToWordsINR, consolidateBillItems } from '@/lib/format';
+import { QR_CODE_DATA_URI } from '@/assets/qrCodeDataUri';
 
 interface A4InvoiceCardProps {
   bill: Bill;
@@ -31,12 +32,6 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
   id = 'a4-invoice-print-area',
   className = '',
 }) => {
-  // Use exact brand or category name directly without any fabricated suffixes
-  const getBrandDisplayName = (brandName?: string): string => {
-    const raw = (brandName || '').trim();
-    return raw || 'General';
-  };
-
   // Helper to extract case packing if available (e.g. from name "(25 Pcs)" or defaults to "0 Case x 1")
   const getCasePacking = (productName: string): string => {
     const match = productName.match(/\((\d+)\s*(?:pcs|pc|items|pack)?\)/i);
@@ -53,12 +48,16 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
   };
 
   // Group items by brand/category
-  const groupsMap = new Map<string, BillItem[]>();
+  const groupsMap = new Map<string, { displayName: string; items: BillItem[] }>();
   items.forEach((item) => {
-    const b = (item.brand || 'General').trim() || 'General';
-    const list = groupsMap.get(b) || [];
-    list.push(item);
-    groupsMap.set(b, list);
+    const rawBrand = (item.brand || 'Standard').trim() || 'Standard';
+    const normKey = rawBrand.toLowerCase();
+    const existing = groupsMap.get(normKey);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      groupsMap.set(normKey, { displayName: rawBrand, items: [item] });
+    }
   });
 
   // Check if brand_discounts is configured on this bill
@@ -90,24 +89,32 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
     return 0;
   };
 
+  // Sort keys to show Standard first, then alphabetical
+  const sortedBrandKeys = Array.from(groupsMap.keys()).sort((a, b) => {
+    if (a === 'standard') return -1;
+    if (b === 'standard') return 1;
+    return a.localeCompare(b);
+  });
+
   // Calculate totals and discounts per group
   const brandGroups: BrandGroup[] = [];
 
-  groupsMap.forEach((gItems, bKey) => {
-    const consolidated = consolidateItems(gItems);
+  sortedBrandKeys.forEach((key) => {
+    const entry = groupsMap.get(key)!;
+    const consolidated = consolidateItems(entry.items);
     const groupTotal = consolidated.reduce(
       (acc, it) => acc + (it.line_total || it.qty * it.unit_price),
       0
     );
 
-    const discountPct = getBrandDiscountPercent(bKey);
+    const discountPct = getBrandDiscountPercent(key);
     const discountAmount =
       discountPct > 0 ? Math.round(((groupTotal * discountPct) / 100) * 100) / 100 : 0;
     const amount = Math.max(0, Math.round((groupTotal - discountAmount) * 100) / 100);
 
     brandGroups.push({
-      brandKey: bKey,
-      displayName: getBrandDisplayName(bKey),
+      brandKey: key,
+      displayName: entry.displayName,
       items: consolidated,
       total: groupTotal,
       discountPct,
@@ -356,15 +363,10 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
                     Scan and Pay
                   </span>
                   <img
-                    src="/qr-vna.jpeg"
+                    src={QR_CODE_DATA_URI}
                     alt="Scan and Pay QR"
-                    className="w-24 h-24 object-contain print:block"
-                    onError={(e) => {
-                      const target = e.currentTarget;
-                      if (!target.src.endsWith('qr-vna.jpg')) {
-                        target.src = '/qr-vna.jpg';
-                      }
-                    }}
+                    className="w-24 h-24 object-contain"
+                    style={{ minWidth: '96px', minHeight: '96px', display: 'block' }}
                   />
                   <span className="text-[9px] font-bold text-slate-700 mt-1 uppercase tracking-tight">
                     UPI / GPay / PhonePe

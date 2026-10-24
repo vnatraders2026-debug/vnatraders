@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bill, BillItem, ShopSettings } from '@/types';
 import { formatINR, formatISTDate, formatNumber, consolidateBillItems } from '@/lib/format';
+import { QR_CODE_DATA_URI } from '@/assets/qrCodeDataUri';
 
 interface ReceiptCardProps {
   bill: Bill;
@@ -53,12 +54,16 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
 
   // Group items by brand/category
   const brandGroups = React.useMemo(() => {
-    const groupsMap = new Map<string, BillItem[]>();
+    const groupsMap = new Map<string, { displayName: string; items: BillItem[] }>();
     consolidatedItems.forEach((item) => {
-      const b = (item.brand || 'General').trim() || 'General';
-      const list = groupsMap.get(b) || [];
-      list.push(item);
-      groupsMap.set(b, list);
+      const rawBrand = (item.brand || 'Standard').trim() || 'Standard';
+      const normKey = rawBrand.toLowerCase();
+      const existing = groupsMap.get(normKey);
+      if (existing) {
+        existing.items.push(item);
+      } else {
+        groupsMap.set(normKey, { displayName: rawBrand.toUpperCase(), items: [item] });
+      }
     });
 
     const groups: Array<{
@@ -73,25 +78,26 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
 
     // Sort to show Standard first, then other brands
     const sortedKeys = Array.from(groupsMap.keys()).sort((a, b) => {
-      if (a.toLowerCase() === 'standard') return -1;
-      if (b.toLowerCase() === 'standard') return 1;
+      if (a === 'standard') return -1;
+      if (b === 'standard') return 1;
       return a.localeCompare(b);
     });
 
-    sortedKeys.forEach((bKey) => {
-      const gItems = groupsMap.get(bKey) || [];
+    sortedKeys.forEach((key) => {
+      const entry = groupsMap.get(key)!;
+      const gItems = entry.items;
       const gSubtotal = gItems.reduce(
         (acc, it) => acc + (it.line_total || it.qty * it.unit_price),
         0
       );
-      const discountPct = getBrandDiscountPercent(bKey);
+      const discountPct = getBrandDiscountPercent(key);
       const discountAmount =
         discountPct > 0 ? Math.round(((gSubtotal * discountPct) / 100) * 100) / 100 : 0;
       const netAmount = Math.max(0, Math.round((gSubtotal - discountAmount) * 100) / 100);
 
       groups.push({
-        brandKey: bKey,
-        displayName: bKey.toUpperCase(),
+        brandKey: key,
+        displayName: entry.displayName,
         items: gItems,
         subtotal: gSubtotal,
         discountPct,
@@ -246,15 +252,10 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
             </div>
             <div className="flex justify-center items-center py-1">
               <img
-                src="/qr-vna.jpeg"
+                src={QR_CODE_DATA_URI}
                 alt="Scan and Pay QR"
-                className="w-28 h-28 sm:w-32 sm:h-32 object-contain mx-auto print:block border border-black p-1 bg-white"
-                onError={(e) => {
-                  const target = e.currentTarget;
-                  if (!target.src.endsWith('qr-vna.jpg')) {
-                    target.src = '/qr-vna.jpg';
-                  }
-                }}
+                className="w-28 h-28 sm:w-32 sm:h-32 object-contain mx-auto border border-black p-1 bg-white"
+                style={{ minWidth: '112px', minHeight: '112px', display: 'block' }}
               />
             </div>
             <p className="text-[10px] font-black text-black uppercase tracking-tight">
