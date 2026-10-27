@@ -408,15 +408,23 @@ class SyncService {
         const mapped = serverBills.map((b: any) => ({ ...b, sync_status: 'synced' as const }));
         await db.bills.bulkPut(mapped);
 
-        // Fetch items for pulled bills
+        // Fetch items for pulled bills in batches of 30 to avoid URL length overflow
         const billIds = serverBills.map((b: any) => b.id);
-        const { data: serverItems } = await supabase
-          .from('bill_items')
-          .select('*')
-          .in('bill_id', billIds);
-        if (serverItems && serverItems.length > 0) {
+        const CHUNK_SIZE = 30;
+        const allItems: BillItem[] = [];
+        for (let i = 0; i < billIds.length; i += CHUNK_SIZE) {
+          const chunk = billIds.slice(i, i + CHUNK_SIZE);
+          const { data: chunkItems } = await supabase
+            .from('bill_items')
+            .select('*')
+            .in('bill_id', chunk);
+          if (chunkItems && chunkItems.length > 0) {
+            allItems.push(...(chunkItems as BillItem[]));
+          }
+        }
+        if (allItems.length > 0) {
           await db.bill_items.where('bill_id').anyOf(billIds).delete();
-          await db.bill_items.bulkPut(serverItems as BillItem[]);
+          await db.bill_items.bulkPut(allItems);
         }
       }
 
@@ -543,10 +551,21 @@ class SyncService {
           await db.bills.bulkPut(mapped);
           billCount = serverBills.length;
 
-          const billIds = serverBills.map((b) => b.id);
-          const { data: serverItems } = await supabase.from('bill_items').select('*').in('bill_id', billIds);
-          if (serverItems && serverItems.length > 0) {
-            await db.bill_items.bulkPut(serverItems as BillItem[]);
+          const billIds = serverBills.map((b: any) => b.id);
+          const CHUNK_SIZE = 30;
+          const allItems: BillItem[] = [];
+          for (let i = 0; i < billIds.length; i += CHUNK_SIZE) {
+            const chunk = billIds.slice(i, i + CHUNK_SIZE);
+            const { data: chunkItems } = await supabase
+              .from('bill_items')
+              .select('*')
+              .in('bill_id', chunk);
+            if (chunkItems && chunkItems.length > 0) {
+              allItems.push(...(chunkItems as BillItem[]));
+            }
+          }
+          if (allItems.length > 0) {
+            await db.bill_items.bulkPut(allItems);
           }
         }
       } catch (billsErr) {

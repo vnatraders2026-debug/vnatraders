@@ -105,18 +105,20 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleMobileMenu, title }) => 
           {getStatusBadge()}
         </div>
 
-        {/* Cloud Refresh Button: clears local cache and pulls fresh data from Supabase */}
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={handleCloudRefresh}
-          disabled={isRefreshing}
-          className="min-h-[36px] py-1 text-xs text-accent border-accent/40 hover:bg-accent-light gap-1.5 font-medium"
-          title="Clear local cache & pull fresh data from Supabase cloud"
-        >
-          <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
-          <span className="hidden md:inline">{isRefreshing ? 'Refreshing...' : 'Refresh Cloud'}</span>
-        </Button>
+        {/* Cloud Refresh Button: clears local cache and pulls fresh data from Supabase (hidden in new bill entry) */}
+        {!isBilling && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleCloudRefresh}
+            disabled={isRefreshing}
+            className="min-h-[36px] py-1 text-xs text-accent border-accent/40 hover:bg-accent-light gap-1.5 font-medium"
+            title="Clear local cache & pull fresh data from Supabase cloud"
+          >
+            <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+            <span className="hidden md:inline">{isRefreshing ? 'Refreshing...' : 'Refresh Cloud'}</span>
+          </Button>
+        )}
 
         {/* Force Application Update Button */}
         <Button

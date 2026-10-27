@@ -15,8 +15,9 @@ import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { Search, Eye, Edit3, Printer, History, MessageSquare, RefreshCw } from 'lucide-react';
+import { Search, Eye, Edit3, Printer, MessageSquare, RefreshCw } from 'lucide-react';
 import { syncService } from '@/sync/syncService';
+import { supabase, isConfigured } from '@/lib/supabase';
 
 export const BillsPage: React.FC = () => {
   const { user } = useAuth();
@@ -144,22 +145,80 @@ export const BillsPage: React.FC = () => {
     });
   }, [bills, searchQuery, filterPaymentMode, filterStaff, dateRange]);
 
+  const getBillItems = async (bill: Bill): Promise<BillItem[]> => {
+    let rawItems: BillItem[] = [];
+
+    // 1. Check local Dexie by bill.id
+    try {
+      rawItems = await db.bill_items.where('bill_id').equals(bill.id).toArray();
+    } catch (e) {
+      console.warn('Dexie bill_items query error:', e);
+    }
+
+    // 2. Check local Dexie by bill.bill_no
+    if ((!rawItems || rawItems.length === 0) && bill.bill_no) {
+      try {
+        rawItems = await db.bill_items.where('bill_id').equals(bill.bill_no).toArray();
+      } catch (e) {
+        console.warn('Dexie bill_items bill_no query error:', e);
+      }
+    }
+
+    // 3. Fallback: check db.outbox (if the bill is waiting in sync queue or was just created)
+    if (!rawItems || rawItems.length === 0) {
+      try {
+        const allOutbox = await db.outbox.toArray();
+        const outboxMatch = allOutbox.find(
+          (o) =>
+            o.payload?.id === bill.id ||
+            o.payload?.bill_no === bill.bill_no ||
+            (o.entity === 'bills' && (o.payload?.id === bill.id || o.payload?.bill_no === bill.bill_no))
+        );
+        if (
+          outboxMatch &&
+          Array.isArray(outboxMatch.payload?.items) &&
+          outboxMatch.payload.items.length > 0
+        ) {
+          rawItems = outboxMatch.payload.items;
+          await db.bill_items.bulkPut(rawItems);
+        }
+      } catch (oErr) {
+        console.warn('Outbox items check fallback:', oErr);
+      }
+    }
+
+    // 4. Fallback: fetch from Supabase if online
+    if ((!rawItems || rawItems.length === 0) && navigator.onLine && isConfigured) {
+      try {
+        const { data: serverItems } = await supabase
+          .from('bill_items')
+          .select('*')
+          .or(`bill_id.eq.${bill.id},bill_id.eq.${bill.bill_no}`);
+        if (serverItems && serverItems.length > 0) {
+          rawItems = serverItems as BillItem[];
+          await db.bill_items.bulkPut(rawItems);
+        }
+      } catch (netErr) {
+        console.warn('Remote bill_items fetch notice:', netErr);
+      }
+    }
+
+    return consolidateBillItems(rawItems || []);
+  };
+
   const handleOpenReceipt = async (bill: Bill) => {
-    const rawItems = await db.bill_items.where('bill_id').equals(bill.id).toArray();
-    const items = consolidateBillItems(rawItems);
+    const items = await getBillItems(bill);
     setViewingBill({ bill, items });
   };
 
   const handleOpenDetailModal = async (bill: Bill) => {
-    const rawItems = await db.bill_items.where('bill_id').equals(bill.id).toArray();
-    const items = consolidateBillItems(rawItems);
+    const items = await getBillItems(bill);
     setViewingBill({ bill, items });
     setIsDetailModalOpen(true);
   };
 
   const handleEditBill = async (bill: Bill) => {
-    const rawItems = await db.bill_items.where('bill_id').equals(bill.id).toArray();
-    const items = consolidateBillItems(rawItems);
+    const items = await getBillItems(bill);
     useCartStore.getState().loadBillForEdit(bill, items);
     navigate('/billing');
   };
@@ -358,12 +417,27 @@ export const BillsPage: React.FC = () => {
 
               return (
                 <div key={b.id} className="bg-surface border border-border rounded p-3 space-y-2">
-                  <div className="flex justify-between items-start">
+                  <div
+                    className="flex justify-between items-start cursor-pointer group"
+                    onClick={() => handleOpenDetailModal(b)}
+                    title="Tap to view bill details"
+                  >
                     <div>
-                      <span className="font-mono font-bold text-accent text-sm">
-                        {b.bill_no}
-                      </span>
-                      <p className="text-[11px] text-text-muted">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-accent text-sm group-hover:underline">
+                          {b.bill_no}
+                        </span>
+                        <span
+                          className={`inline-block px-1.5 py-0.2 text-[10px] font-semibold rounded ${
+                            b.sync_status === 'synced'
+                              ? 'bg-success-light text-success'
+                              : 'bg-warning-light text-warning'
+                          }`}
+                        >
+                          {b.sync_status === 'synced' ? 'Synced' : 'Pending'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-text-muted mt-0.5">
                         {formatISTDate(b.created_at)}
                       </p>
                     </div>
@@ -374,23 +448,34 @@ export const BillsPage: React.FC = () => {
 
                   <div className="flex justify-between text-xs text-text-muted">
                     <span>
-                      Customer: {b.customer_name || 'Walk-in'}
+                      Customer: <span className="font-medium text-text">{b.customer_name || 'Walk-in'}</span>
                     </span>
                     <span className="uppercase font-medium text-text">
                       {b.payment_mode}
                     </span>
                   </div>
 
-                  <div className="flex justify-between items-center pt-2 border-t border-border">
+                  <div className="flex flex-col xs:flex-row justify-between items-start xs:items-center pt-2 border-t border-border gap-2">
                     <span className="text-xs text-text-muted">
                       By {staff ? staff.full_name : 'Staff'}
                     </span>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5 w-full xs:w-auto justify-end">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleOpenDetailModal(b)}
+                        className="min-h-[34px] py-1 px-2.5 text-xs gap-1"
+                        title="View Bill Details"
+                      >
+                        <Eye size={14} />
+                        <span>View</span>
+                      </Button>
                       <Button
                         size="sm"
                         variant="secondary"
                         onClick={() => handleOpenReceipt(b)}
-                        className="min-h-[36px] py-1 text-xs"
+                        className="min-h-[34px] py-1 px-2.5 text-xs gap-1"
+                        title="Print Receipt"
                       >
                         <Printer size={14} />
                         <span>Print</span>
@@ -401,7 +486,8 @@ export const BillsPage: React.FC = () => {
                         disabled={!editPermission.canEdit}
                         disabledReason={editPermission.reason}
                         onClick={() => handleEditBill(b)}
-                        className="min-h-[36px] py-1 text-xs"
+                        className="min-h-[34px] py-1 px-2.5 text-xs gap-1"
+                        title="Edit Bill"
                       >
                         <Edit3 size={14} />
                         <span>Edit</span>
@@ -413,7 +499,7 @@ export const BillsPage: React.FC = () => {
                           setWhatsAppBill(b);
                           setIsWhatsAppOpen(true);
                         }}
-                        className="min-h-[36px] py-1 text-xs text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800"
+                        className="min-h-[34px] py-1 px-2.5 text-xs gap-1 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800"
                         title="Send Bill to WhatsApp"
                       >
                         <MessageSquare size={14} />
@@ -428,32 +514,31 @@ export const BillsPage: React.FC = () => {
         </>
       )}
 
-      {/* BILL DETAILS MODAL (WITH EDIT HISTORY FOR ADMIN) */}
+      {/* BILL DETAILS MODAL */}
       {isDetailModalOpen && viewingBill && (
         <Dialog
           isOpen={isDetailModalOpen}
           onClose={() => setIsDetailModalOpen(false)}
-          title={`Bill Details: ${viewingBill.bill.bill_no}`}
-          maxWidth="lg"
+          title={`Bill: ${viewingBill.bill.bill_no}`}
+          maxWidth="md"
         >
           <div className="space-y-4">
-            {/* Metadata summary */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-background border border-border rounded text-xs">
+            {/* Bill Summary */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 p-3 bg-background border border-border rounded text-xs">
               <div>
-                <span className="text-text-muted block">Created:</span>
+                <span className="text-text-muted block">Date & Time:</span>
                 <span className="font-medium text-text">{formatISTDate(viewingBill.bill.created_at)}</span>
-              </div>
-              <div>
-                <span className="text-text-muted block">Payment:</span>
-                <span className="font-medium uppercase text-text">{viewingBill.bill.payment_mode}</span>
               </div>
               <div>
                 <span className="text-text-muted block">Customer:</span>
                 <span className="font-medium text-text">{viewingBill.bill.customer_name || 'Walk-in'}</span>
+                {viewingBill.bill.customer_phone && (
+                  <span className="text-text-muted block text-[11px]">{viewingBill.bill.customer_phone}</span>
+                )}
               </div>
               <div>
-                <span className="text-text-muted block">Sync Status:</span>
-                <span className="font-semibold text-success capitalize">{viewingBill.bill.sync_status || 'synced'}</span>
+                <span className="text-text-muted block">Payment Mode:</span>
+                <span className="font-medium uppercase text-text">{viewingBill.bill.payment_mode}</span>
               </div>
             </div>
 
@@ -467,25 +552,38 @@ export const BillsPage: React.FC = () => {
                       <th className="p-2 text-left">Item Name</th>
                       <th className="p-2 text-right">Qty</th>
                       <th className="p-2 text-right">Unit Price</th>
-                      <th className="p-2 text-right">Line Total</th>
+                      <th className="p-2 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {viewingBill.items.map((item) => (
-                      <tr key={item.id}>
-                        <td className="p-2">{item.product_name}</td>
-                        <td className="p-2 text-right tabular-nums">{item.qty}</td>
-                        <td className="p-2 text-right tabular-nums">{formatINR(item.unit_price)}</td>
-                        <td className="p-2 text-right tabular-nums font-semibold">{formatINR(item.line_total)}</td>
+                    {viewingBill.items.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="p-4 text-center text-xs text-text-muted">
+                          No items found for this bill
+                        </td>
                       </tr>
-                    ))}
+                    ) : (
+                      viewingBill.items.map((item) => (
+                        <tr key={item.id}>
+                          <td className="p-2 font-medium">
+                            {item.product_name}
+                            {item.brand && item.brand !== 'General' && item.brand !== 'Standard' && (
+                              <span className="text-[10px] text-text-muted block">{item.brand}</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-right tabular-nums">{item.qty}</td>
+                          <td className="p-2 text-right tabular-nums">{formatINR(item.unit_price)}</td>
+                          <td className="p-2 text-right tabular-nums font-semibold">{formatINR(item.line_total)}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
 
             {/* Totals */}
-            <div className="flex justify-end text-xs space-y-1">
+            <div className="flex justify-end text-xs">
               <div className="w-48 space-y-1">
                 <div className="flex justify-between text-text-muted">
                   <span>Subtotal:</span>
@@ -497,30 +595,37 @@ export const BillsPage: React.FC = () => {
                     <span className="tabular-nums">- {formatINR(viewingBill.bill.discount)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-bold text-sm text-text pt-1 border-t border-border">
-                  <span>Total:</span>
+                <div className="flex justify-between font-bold text-sm text-text pt-1.5 border-t border-border">
+                  <span>Grand Total:</span>
                   <span className="tabular-nums text-accent">{formatINR(viewingBill.bill.total)}</span>
                 </div>
               </div>
             </div>
 
-            {/* Admin Edit History */}
-            {user?.role === 'admin' && (
-              <div className="p-3 bg-background border border-border rounded text-xs space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold text-text">
-                  <History size={14} />
-                  <span>Audit / Edit History</span>
-                </div>
-                {viewingBill.bill.edited_at ? (
-                  <p className="text-text-muted">
-                    Last modified on {formatISTDate(viewingBill.bill.edited_at)} by{' '}
-                    {profiles.get(viewingBill.bill.edited_by || '')?.full_name || 'Staff'}.
-                  </p>
-                ) : (
-                  <p className="text-text-muted">Original bill record. No subsequent edits made.</p>
-                )}
-              </div>
-            )}
+            {/* Modal Actions: Only Close and Print (NO Edit etc) */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setIsDetailModalOpen(false);
+                  handleOpenReceipt(viewingBill.bill);
+                }}
+                className="text-xs min-h-[34px] gap-1"
+                title="Print Receipt"
+              >
+                <Printer size={14} />
+                <span>Print</span>
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsDetailModalOpen(false)}
+                className="text-xs min-h-[34px]"
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </Dialog>
       )}
