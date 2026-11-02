@@ -414,16 +414,20 @@ class SyncService {
         const allItems: BillItem[] = [];
         for (let i = 0; i < billIds.length; i += CHUNK_SIZE) {
           const chunk = billIds.slice(i, i + CHUNK_SIZE);
-          const { data: chunkItems } = await supabase
+          const { data: chunkItems, error: chunkErr } = await supabase
             .from('bill_items')
             .select('*')
             .in('bill_id', chunk);
           if (chunkItems && chunkItems.length > 0) {
             allItems.push(...(chunkItems as BillItem[]));
           }
+          if (chunkErr) {
+            console.warn('Sync chunk bill_items warning:', chunkErr.message);
+          }
         }
         if (allItems.length > 0) {
-          await db.bill_items.where('bill_id').anyOf(billIds).delete();
+          const fetchedBillIds = Array.from(new Set(allItems.map((it) => it.bill_id)));
+          await db.bill_items.where('bill_id').anyOf(fetchedBillIds).delete();
           await db.bill_items.bulkPut(allItems);
         }
       }
@@ -556,12 +560,15 @@ class SyncService {
           const allItems: BillItem[] = [];
           for (let i = 0; i < billIds.length; i += CHUNK_SIZE) {
             const chunk = billIds.slice(i, i + CHUNK_SIZE);
-            const { data: chunkItems } = await supabase
+            const { data: chunkItems, error: chunkErr } = await supabase
               .from('bill_items')
               .select('*')
               .in('bill_id', chunk);
             if (chunkItems && chunkItems.length > 0) {
               allItems.push(...(chunkItems as BillItem[]));
+            }
+            if (chunkErr) {
+              console.warn('Force fresh pull bill_items chunk warning:', chunkErr.message);
             }
           }
           if (allItems.length > 0) {

@@ -37,6 +37,8 @@ export const BillsPage: React.FC = () => {
   // Selected bill for viewing/reprint
   const [viewingBill, setViewingBill] = useState<{ bill: Bill; items: BillItem[] } | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [loadingBillId, setLoadingBillId] = useState<string | null>(null);
+  const [isRefreshingItems, setIsRefreshingItems] = useState(false);
   const [whatsAppBill, setWhatsAppBill] = useState<Bill | null>(null);
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
@@ -164,7 +166,7 @@ export const BillsPage: React.FC = () => {
       }
     }
 
-    // 3. Fallback: check db.outbox (if the bill is waiting in sync queue or was just created)
+    // 3. Fallback: check db.outbox (if the bill is waiting in sync queue or was created offline)
     if (!rawItems || rawItems.length === 0) {
       try {
         const allOutbox = await db.outbox.toArray();
@@ -190,13 +192,36 @@ export const BillsPage: React.FC = () => {
     // 4. Fallback: fetch from Supabase if online
     if ((!rawItems || rawItems.length === 0) && navigator.onLine && isConfigured) {
       try {
-        const { data: serverItems } = await supabase
-          .from('bill_items')
-          .select('*')
-          .or(`bill_id.eq.${bill.id},bill_id.eq.${bill.bill_no}`);
-        if (serverItems && serverItems.length > 0) {
-          rawItems = serverItems as BillItem[];
-          await db.bill_items.bulkPut(rawItems);
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bill.id);
+        if (isUuid) {
+          const { data: serverItems, error: itemsErr } = await supabase
+            .from('bill_items')
+            .select('*')
+            .eq('bill_id', bill.id);
+          if (!itemsErr && serverItems && serverItems.length > 0) {
+            rawItems = serverItems as BillItem[];
+            await db.bill_items.bulkPut(rawItems);
+          }
+        }
+
+        // If still empty and bill_no exists, find bill by bill_no in Supabase
+        if ((!rawItems || rawItems.length === 0) && bill.bill_no) {
+          const { data: remoteBill } = await supabase
+            .from('bills')
+            .select('id')
+            .eq('bill_no', bill.bill_no)
+            .maybeSingle();
+
+          if (remoteBill?.id) {
+            const { data: serverItems, error: bErr } = await supabase
+              .from('bill_items')
+              .select('*')
+              .eq('bill_id', remoteBill.id);
+            if (!bErr && serverItems && serverItems.length > 0) {
+              rawItems = serverItems as BillItem[];
+              await db.bill_items.bulkPut(rawItems);
+            }
+          }
         }
       } catch (netErr) {
         console.warn('Remote bill_items fetch notice:', netErr);
@@ -212,9 +237,25 @@ export const BillsPage: React.FC = () => {
   };
 
   const handleOpenDetailModal = async (bill: Bill) => {
-    const items = await getBillItems(bill);
-    setViewingBill({ bill, items });
-    setIsDetailModalOpen(true);
+    setLoadingBillId(bill.id);
+    try {
+      const items = await getBillItems(bill);
+      setViewingBill({ bill, items });
+      setIsDetailModalOpen(true);
+    } finally {
+      setLoadingBillId(null);
+    }
+  };
+
+  const handleRefreshModalItems = async () => {
+    if (!viewingBill) return;
+    setIsRefreshingItems(true);
+    try {
+      const items = await getBillItems(viewingBill.bill);
+      setViewingBill({ bill: viewingBill.bill, items });
+    } finally {
+      setIsRefreshingItems(false);
+    }
   };
 
   const handleEditBill = async (bill: Bill) => {
@@ -364,10 +405,15 @@ export const BillsPage: React.FC = () => {
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => handleOpenDetailModal(b)}
-                            className="p-1.5 text-text-muted hover:text-text rounded hover:bg-background"
+                            disabled={loadingBillId === b.id}
+                            className="p-1.5 text-text-muted hover:text-text rounded hover:bg-background disabled:opacity-50"
                             title="View Details"
                           >
-                            <Eye size={16} />
+                            {loadingBillId === b.id ? (
+                              <RefreshCw size={16} className="animate-spin text-accent" />
+                            ) : (
+                              <Eye size={16} />
+                            )}
                           </button>
                           <button
                             onClick={() => handleOpenReceipt(b)}
@@ -464,11 +510,16 @@ export const BillsPage: React.FC = () => {
                         size="sm"
                         variant="secondary"
                         onClick={() => handleOpenDetailModal(b)}
+                        disabled={loadingBillId === b.id}
                         className="min-h-[34px] py-1 px-2.5 text-xs gap-1"
                         title="View Bill Details"
                       >
-                        <Eye size={14} />
-                        <span>View</span>
+                        {loadingBillId === b.id ? (
+                          <RefreshCw size={14} className="animate-spin text-accent" />
+                        ) : (
+                          <Eye size={14} />
+                        )}
+                        <span>{loadingBillId === b.id ? 'Loading...' : 'View'}</span>
                       </Button>
                       <Button
                         size="sm"
@@ -558,22 +609,32 @@ export const BillsPage: React.FC = () => {
                   <tbody className="divide-y divide-border">
                     {viewingBill.items.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="p-4 text-center text-xs text-text-muted">
-                          No items found for this bill
+                        <td colSpan={4} className="p-4 text-center text-xs text-text-muted space-y-2">
+                          <p>No items found locally for this bill.</p>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={handleRefreshModalItems}
+                            disabled={isRefreshingItems}
+                            className="text-xs mx-auto gap-1"
+                          >
+                            <RefreshCw size={12} className={isRefreshingItems ? 'animate-spin text-accent' : ''} />
+                            <span>{isRefreshingItems ? 'Fetching from Cloud...' : 'Fetch Items from Cloud'}</span>
+                          </Button>
                         </td>
                       </tr>
                     ) : (
                       viewingBill.items.map((item) => (
                         <tr key={item.id}>
-                          <td className="p-2 font-medium">
+                          <td className="p-2 font-medium text-text">
                             {item.product_name}
                             {item.brand && item.brand !== 'General' && item.brand !== 'Standard' && (
                               <span className="text-[10px] text-text-muted block">{item.brand}</span>
                             )}
                           </td>
-                          <td className="p-2 text-right tabular-nums">{item.qty}</td>
-                          <td className="p-2 text-right tabular-nums">{formatINR(item.unit_price)}</td>
-                          <td className="p-2 text-right tabular-nums font-semibold">{formatINR(item.line_total)}</td>
+                          <td className="p-2 text-right tabular-nums text-text">{item.qty}</td>
+                          <td className="p-2 text-right tabular-nums text-text">{formatINR(item.unit_price)}</td>
+                          <td className="p-2 text-right tabular-nums font-semibold text-text">{formatINR(item.line_total)}</td>
                         </tr>
                       ))
                     )}

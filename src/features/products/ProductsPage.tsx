@@ -53,6 +53,7 @@ type ProductFormData = z.infer<typeof productSchema>;
 
 export const ProductsPage: React.FC = () => {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -342,6 +343,13 @@ export const ProductsPage: React.FC = () => {
     const now = new Date().toISOString();
     const productId = editingProduct ? editingProduct.id : generateUUID();
 
+    // Normal staff cannot alter product price/rate. Only admin can set/update price.
+    const finalPrice = isAdmin
+      ? data.price
+      : editingProduct
+      ? editingProduct.price
+      : data.price;
+
     const productRecord: Product = {
       id: productId,
       code: data.code.toUpperCase(),
@@ -349,7 +357,7 @@ export const ProductsPage: React.FC = () => {
       brand: data.brand || 'Standard',
       category: data.category,
       unit: data.unit,
-      price: data.price,
+      price: finalPrice,
       stock: data.stock,
       is_active: editingProduct ? editingProduct.is_active : true,
       created_at: editingProduct?.created_at || now,
@@ -745,18 +753,22 @@ export const ProductsPage: React.FC = () => {
             <span>Export CSV</span>
           </Button>
 
-          {/* Import CSV */}
-          <label className="inline-flex items-center justify-center font-medium transition-colors select-none rounded focus:outline-none focus:ring-2 focus:ring-accent bg-surface text-text border border-border hover:bg-background text-xs px-2.5 py-1.5 gap-1.5 min-h-[40px] cursor-pointer">
-            <Upload size={14} />
-            <span>Import CSV</span>
-            <input type="file" accept=".csv" onChange={handleFileChange} className="hidden" />
-          </label>
+          {/* Import CSV - Admin Only */}
+          {isAdmin && (
+            <label className="inline-flex items-center justify-center font-medium transition-colors select-none rounded focus:outline-none focus:ring-2 focus:ring-accent bg-surface text-text border border-border hover:bg-background text-xs px-2.5 py-1.5 gap-1.5 min-h-[40px] cursor-pointer">
+              <Upload size={14} />
+              <span>Import CSV</span>
+              <input type="file" accept=".csv" onChange={handleFileChange} className="hidden" />
+            </label>
+          )}
 
-          {/* Add Product */}
-          <Button variant="primary" size="sm" onClick={handleOpenCreate}>
-            <Plus size={14} />
-            <span>Add Product</span>
-          </Button>
+          {/* Add Product - Admin Only */}
+          {isAdmin && (
+            <Button variant="primary" size="sm" onClick={handleOpenCreate}>
+              <Plus size={14} />
+              <span>Add Product</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -836,8 +848,8 @@ export const ProductsPage: React.FC = () => {
       ) : filteredProducts.length === 0 ? (
         <EmptyState
           message={isFiltered ? 'No products match the selected filters' : 'No products found'}
-          actionLabel={isFiltered ? 'Clear All Filters' : 'Add New Product'}
-          onAction={isFiltered ? handleClearFilters : handleOpenCreate}
+          actionLabel={isFiltered ? 'Clear All Filters' : (isAdmin ? 'Add New Product' : undefined)}
+          onAction={isFiltered ? handleClearFilters : (isAdmin ? handleOpenCreate : undefined)}
         />
       ) : (
         <Table>
@@ -1074,6 +1086,10 @@ export const ProductsPage: React.FC = () => {
             {...register('price', { valueAsNumber: true })}
             error={errors.price?.message}
             placeholder="0.00"
+            disabled={!isAdmin}
+            readOnly={!isAdmin}
+            className={!isAdmin ? 'bg-background/80 text-text-muted cursor-not-allowed select-none' : ''}
+            helperText={!isAdmin ? 'Rate editing is restricted to Admin only' : undefined}
           />
 
           <Input

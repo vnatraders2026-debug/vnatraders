@@ -28,6 +28,7 @@ import {
 
 export const NewBillPage: React.FC = () => {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Cart store
@@ -52,6 +53,11 @@ export const NewBillPage: React.FC = () => {
     getTotals,
     saveBill,
   } = useCartStore();
+
+  const handleUpdatePrice = (id: string, price: number) => {
+    if (!isAdmin) return;
+    updatePrice(id, price);
+  };
 
   // Local search and category state
   const [searchQuery, setSearchQuery] = useState('');
@@ -429,8 +435,9 @@ export const NewBillPage: React.FC = () => {
             isSaving={isSaving}
             saveError={saveError}
             editingBillNo={editingBillNo}
+            canEditPrice={isAdmin}
             updateQty={updateQty}
-            updatePrice={updatePrice}
+            updatePrice={handleUpdatePrice}
             removeItem={removeItem}
             setCustomerName={setCustomerName}
             setCustomerPhone={setCustomerPhone}
@@ -510,8 +517,9 @@ export const NewBillPage: React.FC = () => {
               isSaving={isSaving}
               saveError={saveError}
               editingBillNo={editingBillNo}
+              canEditPrice={isAdmin}
               updateQty={updateQty}
-              updatePrice={updatePrice}
+              updatePrice={handleUpdatePrice}
               removeItem={removeItem}
               setCustomerName={setCustomerName}
               setCustomerPhone={setCustomerPhone}
@@ -556,7 +564,8 @@ export const NewBillPage: React.FC = () => {
 const EditablePriceField: React.FC<{
   initialPrice: number;
   onPriceChange: (newPrice: number) => void;
-}> = ({ initialPrice, onPriceChange }) => {
+  canEdit?: boolean;
+}> = ({ initialPrice, onPriceChange, canEdit = true }) => {
   const [val, setVal] = useState<string>(initialPrice.toString());
   const [isFocused, setIsFocused] = useState(false);
 
@@ -567,6 +576,7 @@ const EditablePriceField: React.FC<{
   }, [initialPrice, isFocused]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canEdit) return;
     const raw = e.target.value;
     setVal(raw);
     const parsed = parseFloat(raw);
@@ -576,6 +586,7 @@ const EditablePriceField: React.FC<{
   };
 
   const handleBlur = () => {
+    if (!canEdit) return;
     setIsFocused(false);
     const parsed = parseFloat(val);
     if (isNaN(parsed) || parsed < 0) {
@@ -588,9 +599,22 @@ const EditablePriceField: React.FC<{
   };
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    if (!canEdit) return;
     setIsFocused(true);
     e.target.select();
   };
+
+  if (!canEdit) {
+    return (
+      <div
+        className="flex items-center gap-1 bg-background/80 border border-border/80 rounded px-2 py-1 text-xs font-bold font-mono tabular-nums shadow-sm select-none"
+        title="Unit Price: Rate editing is restricted to Admin only"
+      >
+        <span className="text-text-muted/70 font-bold text-xs select-none">@ ₹</span>
+        <span className="w-16 text-right tabular-nums text-text">{Number(initialPrice).toFixed(2)}</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1 bg-surface border border-border rounded px-2 py-1 focus-within:ring-2 focus-within:ring-accent focus-within:border-accent transition-colors shadow-sm">
@@ -604,7 +628,7 @@ const EditablePriceField: React.FC<{
         onBlur={handleBlur}
         placeholder="0.00"
         className="w-20 text-right text-xs font-bold font-mono tabular-nums bg-transparent text-text focus:outline-none"
-        title="Click to edit unit price (type new price directly)"
+        title="Click to edit unit price (Admin only)"
       />
     </div>
   );
@@ -624,6 +648,7 @@ interface BillPaneContentProps {
   isSaving: boolean;
   saveError: string;
   editingBillNo: string | null;
+  canEditPrice?: boolean;
   updateQty: (id: string, qty: number) => void;
   updatePrice: (id: string, price: number) => void;
   removeItem: (id: string) => void;
@@ -651,6 +676,7 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
   isSaving,
   saveError,
   editingBillNo,
+  canEditPrice = false,
   updateQty,
   updatePrice,
   removeItem,
@@ -794,10 +820,11 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
                       </button>
                     </div>
 
-                    {/* Editable Unit Price Field */}
+                    {/* Unit Price Field (Admin only editable) */}
                     <EditablePriceField
                       initialPrice={item.unit_price}
                       onPriceChange={(newPrice) => updatePrice(item.id, newPrice)}
+                      canEdit={canEditPrice}
                     />
 
                     {/* Line Total */}
