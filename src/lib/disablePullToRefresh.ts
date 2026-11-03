@@ -48,3 +48,4 @@ export function disablePullToRefresh(): void {
     { passive: false }
   );
 }
+
