@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Product, PaymentMode, Bill, BillItem, OutboxItem, Profile } from '@/types';
+import { Product, PaymentMode, Bill, BillItem, OutboxItem, Profile, Brand } from '@/types';
 import { calculateBillTotals, BillTotalsResult, consolidateBillItems } from '@/lib/format';
 import { db, generateNextBillNo } from '@/db';
 import { syncService } from '@/sync/syncService';
@@ -41,9 +41,10 @@ interface CartState {
   setDiscountPercent: (percent: number) => void;
   setBrandDiscount: (brand: string, percent: number) => void;
   clearBrandDiscounts: () => void;
+  initializeBrandDiscounts: (brands: Brand[]) => void;
   syncCartBrands: (products: Product[]) => void;
   setPaymentMode: (mode: PaymentMode) => void;
-  clearCart: () => void;
+  clearCart: (brands?: Brand[]) => void;
   loadBillForEdit: (bill: Bill, items: BillItem[]) => void;
 
   // Derived totals
@@ -191,21 +192,46 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   clearBrandDiscounts: () => set({ brand_discounts: {} }),
 
+  initializeBrandDiscounts: (brands: Brand[]) => {
+    if (!brands || brands.length === 0) return;
+    set((state) => {
+      const updated = { ...state.brand_discounts };
+      let changed = false;
+      brands.forEach((b) => {
+        if (b.is_active && b.has_discount && (updated[b.name] === undefined || updated[b.name] === null)) {
+          updated[b.name] = Number(b.discount_percent) || 0;
+          changed = true;
+        }
+      });
+      return changed ? { brand_discounts: updated } : state;
+    });
+  },
+
   setPaymentMode: (mode: PaymentMode) => set({ payment_mode: mode }),
 
-  clearCart: () =>
+  clearCart: (brands?: Brand[]) => {
+    const defaultBrandDiscounts: Record<string, number> = {};
+    if (brands && brands.length > 0) {
+      brands.forEach((b) => {
+        if (b.is_active && b.has_discount) {
+          defaultBrandDiscounts[b.name] = Number(b.discount_percent) || 0;
+        }
+      });
+    }
+
     set({
       items: [],
       customer_name: '',
       customer_phone: '',
       discount_percent: 0,
-      brand_discounts: {},
+      brand_discounts: defaultBrandDiscounts,
       payment_mode: 'cash',
       editingBillId: null,
       editingBillNo: null,
       editingBillCreatedAt: null,
       editingBillCreatedBy: null,
-    }),
+    });
+  },
 
   loadBillForEdit: (bill: Bill, billItems: BillItem[]) => {
     // Consolidate duplicate items if any existed in the loaded bill

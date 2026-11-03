@@ -72,6 +72,20 @@ describe('10-Minute Edit Window Permissions', () => {
     expect(formatRemainingTime(result.remainingMs)).toBe('Admin edit allowed');
   });
 
+  it('allows manager and supervisor to edit any bill at any time', () => {
+    const managerUser: Profile = { id: 'prof-mgr', full_name: 'Manager', role: 'manager', is_active: true };
+    const supervisorUser: Profile = { id: 'prof-sup', full_name: 'Supervisor', role: 'supervisor', is_active: true };
+    const fiveDaysLater = new Date('2026-10-16T12:00:00Z').getTime();
+
+    const mgrRes = checkBillEditPermission(baseBill, managerUser, fiveDaysLater);
+    expect(mgrRes.canEdit).toBe(true);
+    expect(mgrRes.remainingMs).toBe(Infinity);
+
+    const supRes = checkBillEditPermission(baseBill, supervisorUser, fiveDaysLater);
+    expect(supRes.canEdit).toBe(true);
+    expect(supRes.remainingMs).toBe(Infinity);
+  });
+
   it('blocks inactive users from editing', () => {
     const inactiveAdmin: Profile = { ...adminUser, is_active: false };
     const twoMinutesLater = new Date('2026-10-11T12:02:00Z').getTime();

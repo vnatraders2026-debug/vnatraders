@@ -186,11 +186,17 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
           <div>
             <span className="font-semibold">To</span>{' '}
             <span className="font-bold">
-              {bill.customer_name ? bill.customer_name : 'Cash Bill'}
+              {bill.customer_name ? bill.customer_name : `${(bill.payment_mode || 'cash').toUpperCase()} BILL`}
             </span>
             {bill.customer_phone && (
               <span className="text-slate-600 ml-1">({bill.customer_phone})</span>
             )}
+            <div className="text-[11px] font-semibold text-slate-700 mt-0.5">
+              <span>Payment Mode: </span>
+              <span className="font-black uppercase text-slate-900 px-1 py-0.2 rounded bg-slate-100 border border-slate-300">
+                {bill.payment_mode || 'cash'}
+              </span>
+            </div>
           </div>
           <div className="text-right space-y-0.5">
             <div>
@@ -200,6 +206,10 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
             <div>
               <span className="text-slate-600">Date :</span>{' '}
               <span className="font-bold">{formatDateDMY(bill.created_at)}</span>
+            </div>
+            <div>
+              <span className="text-slate-600">Payment :</span>{' '}
+              <span className="font-bold uppercase text-slate-900">{bill.payment_mode || 'cash'}</span>
             </div>
             <div>
               <span className="text-slate-600">Page :</span>{' '}

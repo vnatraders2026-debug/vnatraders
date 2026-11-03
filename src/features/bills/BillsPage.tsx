@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useCartStore } from '@/features/billing/store';
 import { db, getShopSettings } from '@/db';
-import { Bill, BillItem, Profile, ShopSettings } from '@/types';
+import { Bill, BillItem, Profile, ShopSettings, PaymentMode } from '@/types';
 import { formatINR, formatISTDate, consolidateBillItems } from '@/lib/format';
 import { checkBillEditPermission } from '@/lib/permissions';
 import { ReceiptModal } from '@/features/billing/ReceiptModal';
@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Search, Eye, Edit3, Printer, MessageSquare, RefreshCw } from 'lucide-react';
 import { syncService } from '@/sync/syncService';
 import { supabase, isConfigured } from '@/lib/supabase';
+import { generateUUID } from '@/lib/uuid';
 
 export const BillsPage: React.FC = () => {
   const { user } = useAuth();
@@ -264,6 +265,44 @@ export const BillsPage: React.FC = () => {
     navigate('/billing');
   };
 
+  const handleUpdateBillPaymentMode = async (billId: string, newMode: PaymentMode) => {
+    const targetBill = bills.find((b) => b.id === billId);
+    if (!targetBill || targetBill.payment_mode === newMode) return;
+
+    const now = new Date().toISOString();
+    const updated: Bill = {
+      ...targetBill,
+      payment_mode: newMode,
+      updated_at: now,
+    };
+
+    setBills((prev) => prev.map((b) => (b.id === billId ? updated : b)));
+    if (viewingBill && viewingBill.bill.id === billId) {
+      setViewingBill({ ...viewingBill, bill: updated });
+    }
+
+    try {
+      await db.bills.update(billId, {
+        payment_mode: newMode,
+        updated_at: now,
+      });
+
+      await db.outbox.add({
+        id: generateUUID(),
+        entity: 'bills',
+        op: 'update',
+        payload: updated,
+        status: 'pending',
+        attempts: 0,
+        created_at: now,
+      });
+
+      syncService.updatePendingCount();
+    } catch (err: any) {
+      console.warn('Error updating payment mode:', err);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Search and Filters Header */}
@@ -384,8 +423,17 @@ export const BillsPage: React.FC = () => {
                       <TableCell className="text-right font-semibold tabular-nums">
                         {formatINR(b.total)}
                       </TableCell>
-                      <TableCell className="uppercase text-xs font-medium text-text">
-                        {b.payment_mode}
+                      <TableCell>
+                        <select
+                          value={b.payment_mode}
+                          onChange={(e) => handleUpdateBillPaymentMode(b.id, e.target.value as PaymentMode)}
+                          className="text-xs font-bold uppercase py-0.5 px-1.5 bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
+                          title="Click to update payment mode"
+                        >
+                          <option value="cash">CASH</option>
+                          <option value="upi">UPI</option>
+                          <option value="card">CARD</option>
+                        </select>
                       </TableCell>
                       <TableCell className="text-xs text-text">
                         {staff ? staff.full_name : 'Staff'}
@@ -492,13 +540,19 @@ export const BillsPage: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="flex justify-between text-xs text-text-muted">
+                  <div className="flex justify-between items-center text-xs text-text-muted">
                     <span>
                       Customer: <span className="font-medium text-text">{b.customer_name || 'Walk-in'}</span>
                     </span>
-                    <span className="uppercase font-medium text-text">
-                      {b.payment_mode}
-                    </span>
+                    <select
+                      value={b.payment_mode}
+                      onChange={(e) => handleUpdateBillPaymentMode(b.id, e.target.value as PaymentMode)}
+                      className="text-xs font-bold uppercase py-0.5 px-1 bg-surface border border-border rounded"
+                    >
+                      <option value="cash">CASH</option>
+                      <option value="upi">UPI</option>
+                      <option value="card">CARD</option>
+                    </select>
                   </div>
 
                   <div className="flex flex-col xs:flex-row justify-between items-start xs:items-center pt-2 border-t border-border gap-2">
@@ -588,8 +642,16 @@ export const BillsPage: React.FC = () => {
                 )}
               </div>
               <div>
-                <span className="text-text-muted block">Payment Mode:</span>
-                <span className="font-medium uppercase text-text">{viewingBill.bill.payment_mode}</span>
+                <span className="text-text-muted block mb-0.5">Payment Mode:</span>
+                <select
+                  value={viewingBill.bill.payment_mode}
+                  onChange={(e) => handleUpdateBillPaymentMode(viewingBill.bill.id, e.target.value as PaymentMode)}
+                  className="text-xs font-bold uppercase py-0.5 px-2 bg-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
+                >
+                  <option value="cash">CASH</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">CARD</option>
+                </select>
               </div>
             </div>
 

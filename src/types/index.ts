@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'staff';
+export type UserRole = 'admin' | 'manager' | 'supervisor' | 'cashier' | 'staff';
 
 export interface Profile {
   id: string;
@@ -12,6 +12,9 @@ export interface Profile {
 export interface Brand {
   id: string;
   name: string;
+  has_discount?: boolean;
+  discount_percent?: number;
+  max_discount?: number;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;

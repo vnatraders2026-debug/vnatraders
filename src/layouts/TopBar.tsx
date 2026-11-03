@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSync } from '@/sync/useSync';
-import { syncService } from '@/sync/syncService';
 import { useFullscreen } from '@/lib/fullscreen';
 import { useToast } from '@/components/ui/Toast';
 import { PlusCircle, Menu, RefreshCw, Maximize, Minimize, DownloadCloud } from 'lucide-react';
@@ -21,21 +20,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleMobileMenu, title }) => 
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const isBilling = location.pathname === '/billing';
-
-  const handleCloudRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      const res = await syncService.forceFreshPullFromSupabase();
-      toast(res.message, 'success');
-    } catch (err: any) {
-      toast(err?.message || 'Refresh failed', 'error');
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
 
   const getStatusBadge = () => {
     switch (state) {
@@ -104,21 +90,6 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleMobileMenu, title }) => 
         <div aria-live="polite" className="hidden xs:block">
           {getStatusBadge()}
         </div>
-
-        {/* Cloud Refresh Button: clears local cache and pulls fresh data from Supabase (hidden in new bill entry) */}
-        {!isBilling && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={handleCloudRefresh}
-            disabled={isRefreshing}
-            className="min-h-[36px] py-1 text-xs text-accent border-accent/40 hover:bg-accent-light gap-1.5 font-medium"
-            title="Clear local cache & pull fresh data from Supabase cloud"
-          >
-            <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
-            <span className="hidden md:inline">{isRefreshing ? 'Refreshing...' : 'Refresh Cloud'}</span>
-          </Button>
-        )}
 
         {/* Force Application Update Button */}
         <Button

@@ -142,10 +142,14 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
       <div className="text-center text-[11px] font-bold text-black space-y-0.5">
         <div>Bill: <span className="font-mono text-black font-black">{bill.bill_no}</span></div>
         <div className="text-black font-semibold text-[10px]">{formatISTDate(bill.created_at)}</div>
-        {(bill.customer_name || bill.customer_phone) && (
+        {(bill.customer_name || bill.customer_phone) ? (
           <div className="text-[10px] font-medium text-black pt-0.5">
             {bill.customer_name && <span>Customer: <strong className="text-black font-bold">{bill.customer_name}</strong> </span>}
             {bill.customer_phone && <span className="font-semibold text-black">({bill.customer_phone})</span>}
+          </div>
+        ) : (
+          <div className="text-[10px] font-bold text-black uppercase pt-0.5">
+            [ {(bill.payment_mode || 'cash').toUpperCase()} COUNTER SALE ]
           </div>
         )}
       </div>

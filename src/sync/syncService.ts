@@ -305,9 +305,16 @@ class SyncService {
 
       if (error) throw new Error(`Product sync error: ${error.message}`);
     } else if (item.entity === 'brands') {
-      const { id, name, is_active } = item.payload;
+      const { id, name, has_discount, discount_percent, max_discount, is_active } = item.payload;
       try {
-        await supabase.from('brands').upsert({ id, name, is_active }, { onConflict: 'id' });
+        await supabase.from('brands').upsert({
+          id,
+          name,
+          has_discount: has_discount ?? false,
+          discount_percent: discount_percent ?? 0,
+          max_discount: max_discount ?? 0,
+          is_active,
+        }, { onConflict: 'id' });
       } catch (err: any) {
         console.warn('Brands table sync notice:', err?.message);
       }
@@ -477,6 +484,33 @@ class SyncService {
       }
     } catch (logsErr) {
       console.warn('Activity logs background sync notice:', logsErr);
+    }
+
+    // 6. Pull Brands from Cloud
+    try {
+      const { data: serverBrands, error: bErr } = await supabase.from('brands').select('*');
+      if (!bErr && serverBrands && serverBrands.length > 0) {
+        await db.brands.bulkPut(serverBrands as Brand[]);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('brands-synced'));
+        }
+      }
+    } catch (bErr) {
+      console.warn('Brands background sync notice:', bErr);
+    }
+
+    // 7. Pull Categories from Cloud
+    try {
+      const { data: serverCats, error: cErr } = await supabase.from('categories').select('*');
+      if (!cErr && serverCats && serverCats.length > 0) {
+        const activeOnly = serverCats.filter((c: any) => c.is_active !== false);
+        await db.categories.bulkPut(activeOnly as Category[]);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('categories-synced'));
+        }
+      }
+    } catch (cErr) {
+      console.warn('Categories background sync notice:', cErr);
     }
   }
 

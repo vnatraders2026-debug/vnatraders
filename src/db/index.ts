@@ -29,8 +29,24 @@ export const DEFAULT_SETTINGS: ShopSettings = {
 };
 
 export const DEFAULT_BRANDS: Brand[] = [
-  { id: 'brand-standard', name: 'Standard', is_active: true, created_at: new Date().toISOString() },
-  { id: 'brand-general', name: 'General', is_active: true, created_at: new Date().toISOString() },
+  {
+    id: 'brand-standard',
+    name: 'Standard',
+    has_discount: true,
+    discount_percent: 70,
+    max_discount: 80,
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'brand-general',
+    name: 'General',
+    has_discount: false,
+    discount_percent: 0,
+    max_discount: 0,
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
 ];
 
 export const DEFAULT_CATEGORIES: string[] = [

@@ -10,6 +10,7 @@ import { BrandsPage } from '@/features/brands/BrandsPage';
 import { SettingsPage } from '@/features/settings/SettingsPage';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { canViewAnalytics } from '@/lib/permissions';
 
 // Lazy-load heavy admin-only routes to keep billing bundle ultra-light
 const DashboardPage = lazy(() =>
@@ -63,6 +64,17 @@ const RequireAdmin: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   return <>{children}</>;
 };
 
+// Analytics Role Guard (Admin, Manager, Supervisor)
+const RequireAnalytics: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+
+  if (!canViewAnalytics(user)) {
+    return <Navigate to="/403" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 export const AppRoutes: React.FC = () => {
   const { user } = useAuth();
 
@@ -83,7 +95,7 @@ export const AppRoutes: React.FC = () => {
           index
           element={
             <Navigate
-              to={user?.role === 'admin' ? '/dashboard' : '/billing'}
+              to={canViewAnalytics(user) ? '/dashboard' : '/billing'}
               replace
             />
           }
@@ -95,25 +107,25 @@ export const AppRoutes: React.FC = () => {
         <Route path="products" element={<ProductsPage />} />
         <Route path="brands" element={<BrandsPage />} />
 
-        {/* Admin Only Routes (Lazy Loaded) */}
+        {/* Analytics & Reports Routes (Admin, Manager, Supervisor) */}
         <Route
           path="dashboard"
           element={
-            <RequireAdmin>
+            <RequireAnalytics>
               <Suspense fallback={<LazyFallback />}>
                 <DashboardPage />
               </Suspense>
-            </RequireAdmin>
+            </RequireAnalytics>
           }
         />
         <Route
           path="reports"
           element={
-            <RequireAdmin>
+            <RequireAnalytics>
               <Suspense fallback={<LazyFallback />}>
                 <ReportsPage />
               </Suspense>
-            </RequireAdmin>
+            </RequireAnalytics>
           }
         />
         <Route

@@ -32,7 +32,8 @@ export const BottomTabs: React.FC = () => {
     { to: '/bills', label: 'Bills', icon: Receipt },
   ];
 
-  const baseTabs = role === 'admin' ? adminTabs : staffTabs;
+  const canAnalytics = ['admin', 'manager', 'supervisor'].includes(role);
+  const baseTabs = canAnalytics ? adminTabs : staffTabs;
 
   const adminMoreItems = [
     { to: '/products', label: 'Products', icon: Boxes },
@@ -42,11 +43,30 @@ export const BottomTabs: React.FC = () => {
     { to: '/settings', label: 'Settings', icon: Settings },
   ];
 
+  const managerMoreItems = [
+    { to: '/products', label: 'Products', icon: Boxes },
+    { to: '/reports', label: 'Reports', icon: BarChart3 },
+    { to: '/logs', label: 'Activity Logs', icon: ScrollText },
+    { to: '/settings', label: 'Settings', icon: Settings },
+  ];
+
+  const supervisorMoreItems = [
+    { to: '/products', label: 'Products', icon: Boxes },
+    { to: '/reports', label: 'Reports', icon: BarChart3 },
+  ];
+
   const staffMoreItems = [
     { to: '/settings', label: 'Settings', icon: Settings },
   ];
 
-  const moreItems = role === 'admin' ? adminMoreItems : staffMoreItems;
+  const moreItems =
+    role === 'admin'
+      ? adminMoreItems
+      : role === 'manager'
+      ? managerMoreItems
+      : role === 'supervisor'
+      ? supervisorMoreItems
+      : staffMoreItems;
 
   return (
     <>

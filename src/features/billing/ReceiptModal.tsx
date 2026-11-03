@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Bill, BillItem, ShopSettings, Profile } from '@/types';
+import { Bill, BillItem, ShopSettings, Profile, PaymentMode } from '@/types';
 import { checkBillEditPermission, formatRemainingTime } from '@/lib/permissions';
-import { Printer, PlusCircle, Edit3, X, MessageSquare, Bluetooth, Zap, FileText, QrCode } from 'lucide-react';
+import { Printer, PlusCircle, Edit3, X, MessageSquare, Bluetooth, Zap, FileText, QrCode, CreditCard } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { directPrinterService, PrinterStatus } from '@/lib/printer/directPrinterService';
 import { ReceiptCard } from './ReceiptCard';
 import { A4InvoiceCard } from './A4InvoiceCard';
 import { WhatsAppModal } from './WhatsAppModal';
+import { db } from '@/db';
+import { syncService } from '@/sync/syncService';
+import { generateUUID } from '@/lib/uuid';
 
 interface ReceiptModalProps {
   bill: Bill;
@@ -34,6 +37,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   onClose,
 }) => {
   const { toast } = useToast();
+  const [currentBill, setCurrentBill] = useState<Bill>(bill);
   const [paperMode, setPaperMode] = useState<'thermal' | 'a4'>(
     settings.paper_size === 'a4' ? 'a4' : 'thermal'
   );
@@ -42,6 +46,44 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [printerStatus, setPrinterStatus] = useState<PrinterStatus>(directPrinterService.getStatus());
   const [isDirectPrinting, setIsDirectPrinting] = useState(false);
+
+  useEffect(() => {
+    setCurrentBill(bill);
+  }, [bill]);
+
+  const handleUpdatePaymentMode = async (newMode: PaymentMode) => {
+    if (currentBill.payment_mode === newMode) return;
+    const now = new Date().toISOString();
+    const updated: Bill = {
+      ...currentBill,
+      payment_mode: newMode,
+      updated_at: now,
+    };
+    setCurrentBill(updated);
+
+    try {
+      await db.bills.update(currentBill.id, {
+        payment_mode: newMode,
+        updated_at: now,
+      });
+
+      // Queue outbox for Supabase sync
+      await db.outbox.add({
+        id: generateUUID(),
+        entity: 'bills',
+        op: 'update',
+        payload: updated,
+        status: 'pending',
+        attempts: 0,
+        created_at: now,
+      });
+
+      syncService.updatePendingCount();
+      toast(`Payment mode updated to ${newMode.toUpperCase()}`, 'success');
+    } catch (err: any) {
+      toast(`Failed to update payment mode: ${err.message}`, 'error');
+    }
+  };
 
   useEffect(() => {
     return directPrinterService.subscribe((s) => {
@@ -73,7 +115,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     if (paperMode === 'thermal' && directPrinterService.isConnected()) {
       setIsDirectPrinting(true);
       try {
-        const res = await directPrinterService.printBillDirect(bill, items, settings, billedUserName, showScanPay);
+        const res = await directPrinterService.printBillDirect(currentBill, items, settings, billedUserName, showScanPay);
         toast(`Directly printed to ${res.printerName || 'Thermal POS'}!`, 'success');
         return;
       } catch (err: any) {
@@ -107,7 +149,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     }
   };
 
-  const editPermission = checkBillEditPermission(bill, currentUser, currentTimeMs);
+  const editPermission = checkBillEditPermission(currentBill, currentUser, currentTimeMs);
 
   return createPortal(
     <>
@@ -137,7 +179,30 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <h2 className="text-base font-bold text-text">
                 {paperMode === 'a4' ? 'Sales Order (A4 Sheet)' : 'Bill Receipt (Thermal)'}
               </h2>
-              <p className="text-xs text-text-muted">{bill.bill_no}</p>
+              <p className="text-xs text-text-muted">{currentBill.bill_no}</p>
+            </div>
+
+            {/* Cashier Payment Mode Quick Update */}
+            <div className="flex items-center gap-1 bg-background border border-border p-1 rounded text-xs font-semibold">
+              <span className="text-[11px] text-text-muted px-1 flex items-center gap-1 font-bold">
+                <CreditCard size={12} className="text-accent" />
+                <span>Mode:</span>
+              </span>
+              {(['cash', 'upi', 'card'] as PaymentMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => handleUpdatePaymentMode(mode)}
+                  className={`px-2.5 py-1 rounded text-xs font-bold uppercase transition-colors min-h-[28px] ${
+                    currentBill.payment_mode === mode
+                      ? 'bg-accent text-white shadow-xs'
+                      : 'text-text-muted hover:text-text hover:bg-border/30'
+                  }`}
+                  title={`Update bill payment mode to ${mode.toUpperCase()}`}
+                >
+                  {mode}
+                </button>
+              ))}
             </div>
 
             {/* Paper Size Format Toggle */}
@@ -222,7 +287,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <div className="flex-1 overflow-y-auto p-2 bg-background border border-border rounded flex justify-center print:border-none print:p-0 print:m-0 print:overflow-visible print:bg-transparent">
             {paperMode === 'a4' ? (
               <A4InvoiceCard
-                bill={bill}
+                bill={currentBill}
                 items={items}
                 settings={settings}
                 billedBy={billedUserName}
@@ -232,7 +297,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               />
             ) : (
               <ReceiptCard
-                bill={bill}
+                bill={currentBill}
                 items={items}
                 settings={settings}
                 billedBy={billedUserName}
@@ -247,7 +312,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <div className="mt-4 pt-3 border-t border-border flex flex-col gap-2 print:hidden">
             {/* Edit window indicator */}
             <div className="flex items-center justify-between text-xs px-1">
-              <span className="text-text-muted">Staff Edit Window:</span>
+              <span className="text-text-muted">Edit Permission:</span>
               <span
                 className={`font-mono font-medium ${
                   editPermission.canEdit ? 'text-accent' : 'text-danger'
@@ -305,7 +370,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         <WhatsAppModal
           isOpen={isWhatsAppOpen}
           onClose={() => setIsWhatsAppOpen(false)}
-          bill={bill}
+          bill={currentBill}
           items={items}
           settings={settings}
         />

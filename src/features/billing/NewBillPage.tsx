@@ -3,7 +3,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { useCartStore, CartItem } from './store';
 import { db, getShopSettings, initLocalDatabase } from '@/db';
 import { searchProducts, createProductSearchIndex } from '@/db/search';
-import { Product, ShopSettings, PaymentMode, Bill, BillItem } from '@/types';
+import { Product, ShopSettings, PaymentMode, Bill, BillItem, Brand } from '@/types';
 import { formatINR, BrandTotalBreakdown } from '@/lib/format';
 import { ReceiptModal } from './ReceiptModal';
 import { Button } from '@/components/ui/Button';
@@ -24,6 +24,7 @@ import {
   Sparkles,
   Tag,
   RotateCcw,
+  Lock,
 } from 'lucide-react';
 
 export const NewBillPage: React.FC = () => {
@@ -64,6 +65,7 @@ export const NewBillPage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedBrand, setSelectedBrand] = useState<string>('All');
   const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [dbBrands, setDbBrands] = useState<Brand[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -87,6 +89,10 @@ export const NewBillPage: React.FC = () => {
 
     // Synchronize brands in cart if any item was added previously with older brand metadata
     useCartStore.getState().syncCartBrands(prods);
+
+    const brands = await db.brands.toArray();
+    setDbBrands(brands);
+    useCartStore.getState().initializeBrandDiscounts(brands);
 
     const settings = await getShopSettings();
     setShopSettings(settings);
@@ -436,6 +442,8 @@ export const NewBillPage: React.FC = () => {
             saveError={saveError}
             editingBillNo={editingBillNo}
             canEditPrice={isAdmin}
+            canModifyDiscount={isAdmin}
+            dbBrands={dbBrands}
             updateQty={updateQty}
             updatePrice={handleUpdatePrice}
             removeItem={removeItem}
@@ -445,7 +453,7 @@ export const NewBillPage: React.FC = () => {
             setBrandDiscount={setBrandDiscount}
             clearBrandDiscounts={clearBrandDiscounts}
             setPaymentMode={setPaymentMode}
-            clearCart={clearCart}
+            clearCart={() => clearCart(dbBrands)}
             onSaveBill={handleSaveBill}
           />
         </div>
@@ -518,6 +526,8 @@ export const NewBillPage: React.FC = () => {
               saveError={saveError}
               editingBillNo={editingBillNo}
               canEditPrice={isAdmin}
+              canModifyDiscount={isAdmin}
+              dbBrands={dbBrands}
               updateQty={updateQty}
               updatePrice={handleUpdatePrice}
               removeItem={removeItem}
@@ -527,7 +537,7 @@ export const NewBillPage: React.FC = () => {
               setBrandDiscount={setBrandDiscount}
               clearBrandDiscounts={clearBrandDiscounts}
               setPaymentMode={setPaymentMode}
-              clearCart={clearCart}
+              clearCart={() => clearCart(dbBrands)}
               onSaveBill={handleSaveBill}
             />
           </div>
@@ -649,6 +659,8 @@ interface BillPaneContentProps {
   saveError: string;
   editingBillNo: string | null;
   canEditPrice?: boolean;
+  canModifyDiscount?: boolean;
+  dbBrands?: Brand[];
   updateQty: (id: string, qty: number) => void;
   updatePrice: (id: string, price: number) => void;
   removeItem: (id: string) => void;
@@ -677,6 +689,8 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
   saveError,
   editingBillNo,
   canEditPrice = false,
+  canModifyDiscount = false,
+  dbBrands = [],
   updateQty,
   updatePrice,
   removeItem,
@@ -897,20 +911,30 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
                   <span className="text-xs font-semibold text-success tabular-nums">
                     - {formatINR(discountAmount)} ({discountPercent}% net)
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      clearBrandDiscounts();
-                      setDiscountPercent(0);
-                    }}
-                    className="p-0.5 text-text-muted hover:text-danger"
-                    title="Reset discounts"
-                  >
-                    <RotateCcw size={12} />
-                  </button>
+                  {canModifyDiscount && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearBrandDiscounts();
+                        setDiscountPercent(0);
+                      }}
+                      className="p-0.5 text-text-muted hover:text-danger"
+                      title="Reset discounts"
+                    >
+                      <RotateCcw size={12} />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
+
+            {/* Notice when staff cannot add custom discounts */}
+            {!canModifyDiscount && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-accent/5 border border-accent/20 rounded text-[11px] text-text-muted">
+                <Lock size={12} className="text-accent shrink-0" />
+                <span>Fixed by Admin: Default brand discount applied. Staff cannot edit discounts.</span>
+              </div>
+            )}
 
             {/* Clickable Brand Selector Chips */}
             <div className="space-y-2">
@@ -948,51 +972,88 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
               </div>
 
               {/* Discount Controller for Selected Brand */}
-              <div className="p-2 rounded bg-surface border border-border space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-text">
-                    Discount for <strong className="text-accent">{selectedBrandTab}</strong> items:
-                  </span>
-                  {currentBrandData && currentBrandDiscount > 0 && (
-                    <span className="text-xs font-bold text-success font-mono">
-                      - {formatINR(currentBrandData.discount)} ({currentBrandDiscount}% off)
-                    </span>
-                  )}
-                </div>
+              {(() => {
+                const currentBrandConfig = dbBrands?.find(
+                  (b) => b.name.toLowerCase() === selectedBrandTab.toLowerCase()
+                );
+                const maxAllowedDiscount =
+                  currentBrandConfig?.max_discount && currentBrandConfig.max_discount > 0
+                    ? currentBrandConfig.max_discount
+                    : 100;
 
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {activePresets.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setBrandDiscount(selectedBrandTab, preset)}
-                      className={`px-2 py-1 text-xs font-bold rounded border transition-colors min-h-[28px] ${
-                        currentBrandDiscount === preset
-                          ? 'bg-accent text-white border-accent'
-                          : 'bg-background text-text border-border hover:bg-border/40'
-                      }`}
-                    >
-                      {preset}%
-                    </button>
-                  ))}
+                return (
+                  <div className="p-2 rounded bg-surface border border-border space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-text">
+                        Discount for <strong className="text-accent">{selectedBrandTab}</strong> items:
+                      </span>
+                      {currentBrandData && currentBrandDiscount > 0 && (
+                        <span className="text-xs font-bold text-success font-mono">
+                          - {formatINR(currentBrandData.discount)} ({currentBrandDiscount}% off)
+                        </span>
+                      )}
+                    </div>
 
-                  <div className="flex items-center gap-1 ml-auto">
-                    <span className="text-[11px] text-text-muted font-medium">Custom:</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={currentBrandDiscount || ''}
-                      placeholder="0"
-                      onChange={(e) =>
-                        setBrandDiscount(selectedBrandTab, parseFloat(e.target.value) || 0)
-                      }
-                      className="w-14 px-1.5 py-1 text-right text-xs font-bold font-mono tabular-nums bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent"
-                    />
-                    <span className="text-xs text-text-muted font-bold">%</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {activePresets.map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          disabled={!canModifyDiscount}
+                          onClick={() => {
+                            if (!canModifyDiscount) return;
+                            const valid = maxAllowedDiscount > 0 ? Math.min(preset, maxAllowedDiscount) : preset;
+                            setBrandDiscount(selectedBrandTab, valid);
+                          }}
+                          className={`px-2 py-1 text-xs font-bold rounded border transition-colors min-h-[28px] ${
+                            currentBrandDiscount === preset
+                              ? 'bg-accent text-white border-accent'
+                              : 'bg-background text-text border-border hover:bg-border/40'
+                          } ${!canModifyDiscount ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        >
+                          {preset}%
+                        </button>
+                      ))}
+
+                      <div className="flex items-center gap-1 ml-auto">
+                        <span className="text-[11px] text-text-muted font-medium">Custom:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max={maxAllowedDiscount > 0 ? maxAllowedDiscount : 100}
+                          disabled={!canModifyDiscount}
+                          value={currentBrandDiscount || ''}
+                          placeholder="0"
+                          onChange={(e) => {
+                            if (!canModifyDiscount) return;
+                            const parsed = parseFloat(e.target.value) || 0;
+                            const capped = maxAllowedDiscount > 0 ? Math.min(parsed, maxAllowedDiscount) : parsed;
+                            setBrandDiscount(selectedBrandTab, capped);
+                          }}
+                          className={`w-14 px-1.5 py-1 text-right text-xs font-bold font-mono tabular-nums bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent ${
+                            !canModifyDiscount ? 'opacity-60 cursor-not-allowed bg-surface' : ''
+                          }`}
+                          title={
+                            !canModifyDiscount
+                              ? 'Only Admin can add custom discounts'
+                              : maxAllowedDiscount > 0
+                              ? `Max allowed: ${maxAllowedDiscount}%`
+                              : undefined
+                          }
+                        />
+                        <span className="text-xs text-text-muted font-bold">%</span>
+                      </div>
+                    </div>
+
+                    {currentBrandConfig?.has_discount && (
+                      <div className="text-[10px] text-text-muted flex justify-between pt-0.5 border-t border-border/40">
+                        <span>Admin default: <strong className="text-text">{currentBrandConfig.discount_percent}%</strong></span>
+                        <span>Max allowed: <strong className="text-text">{maxAllowedDiscount}%</strong></span>
+                      </div>
+                    )}
                   </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* Live Brand-wise breakdown if any brand has discount */}
               {Object.entries(brandTotals).some(([_, d]) => d.discount > 0) && (

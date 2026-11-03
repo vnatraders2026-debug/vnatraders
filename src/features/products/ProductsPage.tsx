@@ -374,6 +374,36 @@ export const ProductsPage: React.FC = () => {
       created_at: now,
     };
 
+    // Ensure product brand is registered in db.brands
+    const brandNameTrimmed = (productRecord.brand || '').trim();
+    if (brandNameTrimmed) {
+      const existingB = await db.brands
+        .filter((b) => b.name.toLowerCase() === brandNameTrimmed.toLowerCase())
+        .first();
+      if (!existingB) {
+        const newBrand: Brand = {
+          id: generateUUID(),
+          name: brandNameTrimmed,
+          has_discount: false,
+          discount_percent: 0,
+          max_discount: 0,
+          is_active: true,
+          created_at: now,
+          updated_at: now,
+        };
+        await db.brands.put(newBrand);
+        await db.outbox.add({
+          id: generateUUID(),
+          entity: 'brands',
+          op: 'insert',
+          payload: newBrand,
+          status: 'pending',
+          attempts: 0,
+          created_at: now,
+        });
+      }
+    }
+
     await db.transaction('rw', [db.products, db.outbox], async () => {
       await db.products.put(productRecord);
       await db.outbox.put(outboxItem);
@@ -612,6 +642,44 @@ export const ProductsPage: React.FC = () => {
         await db.products.bulkPut(recordsToPut);
         await db.outbox.bulkPut(outboxItems);
       });
+
+      // Auto-register any new brands from CSV into db.brands
+      const existingBrands = await db.brands.toArray();
+      const existingBrandNames = new Set(existingBrands.map((b) => b.name.toLowerCase().trim()));
+      const newBrandsToPut: Brand[] = [];
+      const newBrandOutbox: OutboxItem[] = [];
+
+      for (const p of recordsToPut) {
+        const b = (p.brand || '').trim();
+        if (b && !existingBrandNames.has(b.toLowerCase())) {
+          existingBrandNames.add(b.toLowerCase());
+          const newB: Brand = {
+            id: generateUUID(),
+            name: b,
+            has_discount: false,
+            discount_percent: 0,
+            max_discount: 0,
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+          };
+          newBrandsToPut.push(newB);
+          newBrandOutbox.push({
+            id: generateUUID(),
+            entity: 'brands',
+            op: 'insert',
+            payload: newB,
+            status: 'pending',
+            attempts: 0,
+            created_at: now,
+          });
+        }
+      }
+
+      if (newBrandsToPut.length > 0) {
+        await db.brands.bulkPut(newBrandsToPut);
+        await db.outbox.bulkPut(newBrandOutbox);
+      }
 
       for (const p of recordsToPut) {
         updateProductInIndex(p);
