@@ -307,14 +307,21 @@ class SyncService {
     } else if (item.entity === 'brands') {
       const { id, name, has_discount, discount_percent, max_discount, is_active } = item.payload;
       try {
-        await supabase.from('brands').upsert({
-          id,
-          name,
-          has_discount: has_discount ?? false,
-          discount_percent: discount_percent ?? 0,
-          max_discount: max_discount ?? 0,
-          is_active,
-        }, { onConflict: 'id' });
+        if (item.op === 'delete') {
+          const { error: delErr } = await supabase.from('brands').delete().eq('id', id);
+          if (delErr) {
+            console.warn('Brands cloud delete notice:', delErr.message);
+          }
+        } else {
+          await supabase.from('brands').upsert({
+            id,
+            name,
+            has_discount: has_discount ?? false,
+            discount_percent: discount_percent ?? 0,
+            max_discount: max_discount ?? 0,
+            is_active,
+          }, { onConflict: 'id' });
+        }
       } catch (err: any) {
         console.warn('Brands table sync notice:', err?.message);
       }

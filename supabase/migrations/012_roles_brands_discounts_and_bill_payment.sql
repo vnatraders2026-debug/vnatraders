@@ -57,6 +57,13 @@ SET has_discount = false,
     max_discount = 0.00
 WHERE name = 'General' AND has_discount IS NULL;
 
+-- Allow authenticated users to delete brands
+DROP POLICY IF EXISTS "Allow authenticated users to delete brands" ON public.brands;
+CREATE POLICY "Allow authenticated users to delete brands"
+  ON public.brands FOR DELETE
+  TO authenticated
+  USING (true);
+
 -- -------------------------------------------------------------------------
 -- PART 3: PERMISSIONS & RLS POLICIES FOR BILL EDITING
 -- Allows Admin, Manager, and Supervisor to edit any bill at any time.

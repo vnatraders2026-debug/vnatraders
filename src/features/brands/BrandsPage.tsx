@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { db, initLocalDatabase } from '@/db';
-import { Brand, OutboxItem } from '@/types';
+import { Brand, Product, OutboxItem } from '@/types';
 import { syncService } from '@/sync/syncService';
 import { generateUUID } from '@/lib/uuid';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
@@ -13,7 +13,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
-import { Tag, Plus, Edit2, Search, CheckCircle2, XCircle, Sparkles, Percent, RefreshCw } from 'lucide-react';
+import { Tag, Plus, Edit2, Search, CheckCircle2, XCircle, Sparkles, Percent, RefreshCw, Trash2 } from 'lucide-react';
 import { supabase, isConfigured } from '@/lib/supabase';
 
 const brandSchema = z.object({
@@ -76,6 +76,52 @@ export const BrandsPage: React.FC = () => {
         await initLocalDatabase();
         allBrands = await db.brands.toArray();
       }
+
+      // Group by normalized lowercase name to automatically eliminate duplicate records
+      const nameGroups = new Map<string, Brand[]>();
+      for (const b of allBrands) {
+        const key = b.name.trim().toLowerCase();
+        if (!nameGroups.has(key)) nameGroups.set(key, []);
+        nameGroups.get(key)!.push(b);
+      }
+
+      const duplicateIdsToDelete: string[] = [];
+      const deduplicatedBrands: Brand[] = [];
+
+      for (const [, list] of nameGroups) {
+        if (list.length === 1) {
+          deduplicatedBrands.push(list[0]);
+        } else {
+          // Sort candidates: prefer default ID, prefer has_discount, prefer active
+          list.sort((a, b) => {
+            if (a.id.startsWith('11111111-')) return -1;
+            if (b.id.startsWith('11111111-')) return 1;
+            if (a.has_discount && !b.has_discount) return -1;
+            if (!a.has_discount && b.has_discount) return 1;
+            if (a.is_active && !b.is_active) return -1;
+            if (!a.is_active && b.is_active) return 1;
+            return 0;
+          });
+
+          deduplicatedBrands.push(list[0]);
+          for (let i = 1; i < list.length; i++) {
+            duplicateIdsToDelete.push(list[i].id);
+          }
+        }
+      }
+
+      if (duplicateIdsToDelete.length > 0) {
+        await db.brands.bulkDelete(duplicateIdsToDelete);
+        if (navigator.onLine && isConfigured) {
+          try {
+            await supabase.from('brands').delete().in('id', duplicateIdsToDelete);
+          } catch (delErr) {
+            console.warn('Duplicate brands cloud prune notice:', delErr);
+          }
+        }
+      }
+
+      allBrands = deduplicatedBrands;
 
       // 2. Auto-discover brands from existing products in catalog
       const allProducts = await db.products.toArray();
@@ -201,17 +247,38 @@ export const BrandsPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const [deletingBrand, setDeletingBrand] = useState<Brand | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const onFormSubmit = async (data: BrandFormData) => {
     const trimmedName = data.name.trim();
 
-    // Check unique name constraint
-    const existing = await db.brands
-      .filter((b) => b.name.toLowerCase() === trimmedName.toLowerCase() && b.id !== editingBrand?.id)
-      .first();
+    // If editing and name has NOT changed, don't fail unique check against itself or duplicates!
+    if (editingBrand && editingBrand.name.toLowerCase().trim() === trimmedName.toLowerCase()) {
+      // Clean up any lingering duplicate records with this same name
+      const duplicates = await db.brands
+        .filter((b) => b.name.toLowerCase() === trimmedName.toLowerCase() && b.id !== editingBrand.id)
+        .toArray();
+      if (duplicates.length > 0) {
+        await db.brands.bulkDelete(duplicates.map((d) => d.id));
+        if (navigator.onLine && isConfigured) {
+          try {
+            await supabase.from('brands').delete().in('id', duplicates.map((d) => d.id));
+          } catch (delErr) {
+            console.warn('Duplicate cleanup notice:', delErr);
+          }
+        }
+      }
+    } else {
+      // Check unique name constraint for new or renamed brand
+      const existing = await db.brands
+        .filter((b) => b.name.toLowerCase() === trimmedName.toLowerCase() && b.id !== editingBrand?.id)
+        .first();
 
-    if (existing) {
-      toast(`Brand "${trimmedName}" already exists`, 'error');
-      return;
+      if (existing) {
+        toast(`Brand "${trimmedName}" already exists`, 'error');
+        return;
+      }
     }
 
     const now = new Date().toISOString();
@@ -245,10 +312,132 @@ export const BrandsPage: React.FC = () => {
       await db.outbox.put(outboxItem);
     });
 
+    // If brand was renamed, update linked products to new brand name
+    if (editingBrand && editingBrand.name !== trimmedName) {
+      const oldName = editingBrand.name;
+      const linkedProducts = await db.products
+        .filter((p) => (p.brand || '').toLowerCase().trim() === oldName.toLowerCase().trim())
+        .toArray();
+      if (linkedProducts.length > 0) {
+        const prodsToUpdate: Product[] = [];
+        const prodOutbox: OutboxItem[] = [];
+        for (const p of linkedProducts) {
+          const upd = { ...p, brand: trimmedName, updated_at: now };
+          prodsToUpdate.push(upd);
+          prodOutbox.push({
+            id: generateUUID(),
+            entity: 'products',
+            op: 'update',
+            payload: upd,
+            status: 'pending',
+            attempts: 0,
+            created_at: now,
+          });
+        }
+        await db.transaction('rw', [db.products, db.outbox], async () => {
+          await db.products.bulkPut(prodsToUpdate);
+          await db.outbox.bulkPut(prodOutbox);
+        });
+      }
+    }
+
+    if (navigator.onLine && isConfigured) {
+      syncService.processOutbox().catch(console.warn);
+    }
+
     syncService.updatePendingCount();
     toast(editingBrand ? 'Brand updated successfully' : 'Brand created successfully', 'success');
     setIsModalOpen(false);
-    loadData();
+    loadData(false);
+  };
+
+  const handleConfirmDelete = (brand: Brand) => {
+    setDeletingBrand(brand);
+  };
+
+  const handleExecuteDelete = async () => {
+    if (!deletingBrand) return;
+    setIsDeleting(true);
+    try {
+      const now = new Date().toISOString();
+      const brandName = deletingBrand.name;
+      const brandId = deletingBrand.id;
+
+      // 1. If products are linked to this brand, reassign their brand to 'General'
+      const linkedProducts = await db.products
+        .filter((p) => (p.brand || '').toLowerCase().trim() === brandName.toLowerCase().trim())
+        .toArray();
+
+      if (linkedProducts.length > 0) {
+        const updatedProducts: Product[] = [];
+        const productOutbox: OutboxItem[] = [];
+
+        for (const p of linkedProducts) {
+          const upd: Product = { ...p, brand: 'General', updated_at: now };
+          updatedProducts.push(upd);
+          productOutbox.push({
+            id: generateUUID(),
+            entity: 'products',
+            op: 'update',
+            payload: upd,
+            status: 'pending',
+            attempts: 0,
+            created_at: now,
+          });
+        }
+
+        await db.transaction('rw', [db.products, db.outbox], async () => {
+          await db.products.bulkPut(updatedProducts);
+          await db.outbox.bulkPut(productOutbox);
+        });
+      }
+
+      // 2. Delete all records matching this brand name from Dexie
+      const matchingBrands = await db.brands
+        .filter((b) => b.name.toLowerCase().trim() === brandName.toLowerCase().trim() || b.id === brandId)
+        .toArray();
+      const allIds = matchingBrands.map((b) => b.id);
+      if (!allIds.includes(brandId)) {
+        allIds.push(brandId);
+      }
+
+      await db.brands.bulkDelete(allIds);
+
+      // 3. Queue in outbox
+      for (const idToDelete of allIds) {
+        await db.outbox.add({
+          id: generateUUID(),
+          entity: 'brands',
+          op: 'delete',
+          payload: { id: idToDelete, name: brandName },
+          status: 'pending',
+          attempts: 0,
+          created_at: now,
+        });
+      }
+
+      // 4. Remote delete from Supabase if online
+      if (navigator.onLine && isConfigured) {
+        try {
+          await supabase.from('brands').delete().in('id', allIds);
+        } catch (delErr: any) {
+          console.warn('Remote brand delete notice:', delErr?.message);
+        }
+        syncService.processOutbox().catch(console.warn);
+      }
+
+      syncService.updatePendingCount();
+      toast(`Brand "${brandName}" deleted successfully`, 'success');
+      setDeletingBrand(null);
+      if (isModalOpen && editingBrand?.id === brandId) {
+        setIsModalOpen(false);
+      }
+      loadData(false);
+    } catch (err: any) {
+      toast(`Error deleting brand: ${err?.message || 'Unknown error'}`, 'error');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleToggleStatus = async (brand: Brand) => {
@@ -439,6 +628,13 @@ export const BrandsPage: React.FC = () => {
                         >
                           {brand.is_active ? 'Deactivate' : 'Activate'}
                         </button>
+                        <button
+                          onClick={() => handleConfirmDelete(brand)}
+                          className="p-1.5 text-text-muted hover:text-danger hover:bg-danger-light rounded transition-colors"
+                          title="Delete brand"
+                        >
+                          <Trash2 size={15} />
+                        </button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -544,20 +740,78 @@ export const BrandsPage: React.FC = () => {
             </label>
           </div>
 
+          <div className="flex items-center justify-between pt-4 border-t border-border">
+            {editingBrand ? (
+              <Button
+                type="button"
+                variant="danger"
+                onClick={() => {
+                  const b = editingBrand;
+                  setIsModalOpen(false);
+                  handleConfirmDelete(b);
+                }}
+                disabled={isSubmitting}
+                className="gap-1.5 text-xs font-semibold"
+              >
+                <Trash2 size={14} />
+                <span>Delete Brand</span>
+              </Button>
+            ) : <div />}
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsModalOpen(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={isSubmitting}>
+                {editingBrand ? 'Save Changes' : 'Create Brand'}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        isOpen={Boolean(deletingBrand)}
+        onClose={() => setDeletingBrand(null)}
+        title={deletingBrand ? `Delete Brand: ${deletingBrand.name}` : 'Delete Brand'}
+      >
+        <div className="space-y-4 pt-2">
+          <p className="text-sm text-text">
+            Are you sure you want to permanently delete brand <strong>"{deletingBrand?.name}"</strong>?
+          </p>
+
+          {Boolean(deletingBrand && productBrandCounts[deletingBrand.name] > 0) && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded text-xs text-amber-700 dark:text-amber-300">
+              <strong>Notice:</strong> {productBrandCounts[deletingBrand?.name || '']} products are currently assigned to this brand.
+              Deleting this brand will re-assign those products to <strong>General</strong>.
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-4 border-t border-border">
             <Button
-              type="button"
               variant="secondary"
-              onClick={() => setIsModalOpen(false)}
-              disabled={isSubmitting}
+              onClick={() => setDeletingBrand(null)}
+              disabled={isDeleting}
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={isSubmitting}>
-              {editingBrand ? 'Save Changes' : 'Create Brand'}
+            <Button
+              variant="danger"
+              onClick={handleExecuteDelete}
+              disabled={isDeleting}
+              className="gap-1.5 font-semibold"
+            >
+              <Trash2 size={14} />
+              <span>{isDeleting ? 'Deleting...' : 'Delete Brand'}</span>
             </Button>
           </div>
-        </form>
+        </div>
       </Dialog>
     </div>
   );
