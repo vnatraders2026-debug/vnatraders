@@ -15,6 +15,10 @@ initLocalDatabase()
   });
 
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { disablePullToRefresh } from './lib/disablePullToRefresh';
+
+// Disable native pull-to-refresh on mobile browsers
+disablePullToRefresh();
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

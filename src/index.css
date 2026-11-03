@@ -25,6 +25,8 @@
     color: var(--text-color);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: none;
+    overscroll-behavior: none;
   }
 
   body {
@@ -33,6 +35,14 @@
     min-height: 100dvh;
     margin: 0;
     padding: 0;
+    overscroll-behavior-y: none;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #root {
+    overscroll-behavior-y: none;
+    overscroll-behavior: none;
   }
 
   .tabular-nums {
