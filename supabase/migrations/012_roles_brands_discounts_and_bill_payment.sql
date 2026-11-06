@@ -44,18 +44,12 @@ ALTER TABLE public.brands
   ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS max_discount NUMERIC(5,2) NOT NULL DEFAULT 0;
 
--- Set default values for standard brands
-UPDATE public.brands
-SET has_discount = true,
-    discount_percent = 70.00,
-    max_discount = 80.00
-WHERE name = 'Standard' AND (discount_percent = 0 OR has_discount = false);
-
+-- Ensure columns are not null
 UPDATE public.brands
 SET has_discount = false,
     discount_percent = 0.00,
     max_discount = 0.00
-WHERE name = 'General' AND has_discount IS NULL;
+WHERE has_discount IS NULL;
 
 -- Allow authenticated users to delete brands
 DROP POLICY IF EXISTS "Allow authenticated users to delete brands" ON public.brands;
