@@ -26,27 +26,12 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   paper_size: '80mm',
   auto_print: true,
   print_margin_offset: 0,
+  default_discount_percent: 70,
 };
 
 export const DEFAULT_BRANDS: Brand[] = [
-  {
-    id: '11111111-2222-3333-4444-555555550001',
-    name: 'Standard',
-    has_discount: false,
-    discount_percent: 0,
-    max_discount: 0,
-    is_active: true,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: '11111111-2222-3333-4444-555555550002',
-    name: 'General',
-    has_discount: false,
-    discount_percent: 0,
-    max_discount: 0,
-    is_active: true,
-    created_at: new Date().toISOString(),
-  },
+  { id: 'brand-standard', name: 'Standard', is_active: true, created_at: new Date().toISOString() },
+  { id: 'brand-general', name: 'General', is_active: true, created_at: new Date().toISOString() },
 ];
 
 export const DEFAULT_CATEGORIES: string[] = [
@@ -132,22 +117,10 @@ export async function initLocalDatabase(): Promise<void> {
     await db.settings.put({ key: 'shop_settings', value: DEFAULT_SETTINGS });
   }
 
-  // Ensure default brands (Standard, General) exist and Standard has its default discount
-  const existingBrands = await db.brands.toArray();
-  if (existingBrands.length === 0) {
+  // Ensure default brands (Standard, General) exist
+  const brandCount = await db.brands.count();
+  if (brandCount === 0) {
     await db.brands.bulkPut(DEFAULT_BRANDS);
-  } else {
-    // Ensure 'Standard' brand exists (preserve any Admin-configured discount)
-    const standardBrand = existingBrands.find((b) => b.name.trim().toLowerCase() === 'standard');
-    if (!standardBrand) {
-      await db.brands.put(DEFAULT_BRANDS[0]);
-    }
-
-    // Ensure 'General' brand exists
-    const generalBrand = existingBrands.find((b) => b.name.trim().toLowerCase() === 'general');
-    if (!generalBrand) {
-      await db.brands.put(DEFAULT_BRANDS[1]);
-    }
   }
 
   // Ensure default cracker categories exist
@@ -160,31 +133,6 @@ export async function initLocalDatabase(): Promise<void> {
       created_at: new Date().toISOString(),
     }));
     await db.categories.bulkPut(catsToInsert);
-  }
-
-  // Self-healing: ensure all existing products have a valid brand (defaulting to 'Standard')
-  try {
-    const allProds = await db.products.toArray();
-    const prodsToFix: Product[] = [];
-    const catSet = new Set(DEFAULT_CATEGORIES.map((c) => c.toLowerCase()));
-
-    for (const p of allProds) {
-      const b = (p.brand || '').trim();
-      // If brand is empty or erroneously set to a category name, default to Standard
-      if (!b || catSet.has(b.toLowerCase())) {
-        prodsToFix.push({
-          ...p,
-          brand: 'Standard',
-          updated_at: new Date().toISOString(),
-        });
-      }
-    }
-
-    if (prodsToFix.length > 0) {
-      await db.products.bulkPut(prodsToFix);
-    }
-  } catch (err) {
-    console.warn('Product brand migration notice:', err);
   }
 
   // Automatically remove any legacy pre-filled / demo products from previous sessions
@@ -371,6 +319,7 @@ export async function saveShopSettings(settings: Partial<ShopSettings>): Promise
           paper_size: updated.paper_size,
           auto_print: updated.auto_print ?? true,
           device_code: updated.device_code,
+          default_discount_percent: updated.default_discount_percent ?? 70,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'key' }
@@ -402,57 +351,6 @@ export async function generateNextBillNo(explicitDeviceCode?: string): Promise<s
     });
     return formatBillNo(dateStr, device, nextSeq);
   });
-}
-
-/**
- * Automatically inspects the outbox and activity logs to recover any bills
- * that might have been lost or removed from db.bills by previous sync cycles.
- */
-export async function restoreMissingBills(): Promise<number> {
-  let restored = 0;
-  try {
-    const existingBills = await db.bills.toArray();
-    const existingIds = new Set(existingBills.map((b) => b.id));
-    const billsToRestore: Bill[] = [];
-    const itemsToRestore: BillItem[] = [];
-
-    // 1. Recover from outbox
-    const billOutbox = await db.outbox.where('entity').equals('bills').toArray();
-    for (const item of billOutbox) {
-      const p = item.payload;
-      if (p && p.id && !existingIds.has(p.id)) {
-        const { items, ...billData } = p;
-        billsToRestore.push(billData as Bill);
-        existingIds.add(p.id);
-        restored++;
-
-        if (Array.isArray(items) && items.length > 0) {
-          itemsToRestore.push(...items);
-        }
-      }
-    }
-
-    // 2. Recover from activity_logs
-    const billLogs = await db.activity_logs.where('entity').equals('bills').toArray();
-    for (const log of billLogs) {
-      const b = (log as any).newData;
-      if (b && b.id && !existingIds.has(b.id)) {
-        billsToRestore.push(b as Bill);
-        existingIds.add(b.id);
-        restored++;
-      }
-    }
-
-    if (billsToRestore.length > 0) {
-      await db.bills.bulkPut(billsToRestore);
-    }
-    if (itemsToRestore.length > 0) {
-      await db.bill_items.bulkPut(itemsToRestore);
-    }
-  } catch (err) {
-    console.warn('Bill recovery note:', err);
-  }
-  return restored;
 }
 
 /**

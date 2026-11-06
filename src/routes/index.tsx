@@ -10,7 +10,6 @@ import { BrandsPage } from '@/features/brands/BrandsPage';
 import { SettingsPage } from '@/features/settings/SettingsPage';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { canViewAnalytics } from '@/lib/permissions';
 
 // Lazy-load heavy admin-only routes to keep billing bundle ultra-light
 const DashboardPage = lazy(() =>
@@ -64,28 +63,6 @@ const RequireAdmin: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   return <>{children}</>;
 };
 
-// Admin or Manager Guard (e.g. Activity Logs)
-const RequireAdminOrManager: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
-
-  if (user?.role !== 'admin' && user?.role !== 'manager') {
-    return <Navigate to="/403" replace />;
-  }
-
-  return <>{children}</>;
-};
-
-// Analytics Role Guard (Admin, Manager, Supervisor)
-const RequireAnalytics: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
-
-  if (!canViewAnalytics(user)) {
-    return <Navigate to="/403" replace />;
-  }
-
-  return <>{children}</>;
-};
-
 export const AppRoutes: React.FC = () => {
   const { user } = useAuth();
 
@@ -106,7 +83,7 @@ export const AppRoutes: React.FC = () => {
           index
           element={
             <Navigate
-              to={canViewAnalytics(user) ? '/dashboard' : '/billing'}
+              to={user?.role === 'admin' ? '/dashboard' : '/billing'}
               replace
             />
           }
@@ -118,25 +95,25 @@ export const AppRoutes: React.FC = () => {
         <Route path="products" element={<ProductsPage />} />
         <Route path="brands" element={<BrandsPage />} />
 
-        {/* Analytics & Reports Routes (Admin, Manager, Supervisor) */}
+        {/* Admin Only Routes (Lazy Loaded) */}
         <Route
           path="dashboard"
           element={
-            <RequireAnalytics>
+            <RequireAdmin>
               <Suspense fallback={<LazyFallback />}>
                 <DashboardPage />
               </Suspense>
-            </RequireAnalytics>
+            </RequireAdmin>
           }
         />
         <Route
           path="reports"
           element={
-            <RequireAnalytics>
+            <RequireAdmin>
               <Suspense fallback={<LazyFallback />}>
                 <ReportsPage />
               </Suspense>
-            </RequireAnalytics>
+            </RequireAdmin>
           }
         />
         <Route
@@ -152,11 +129,11 @@ export const AppRoutes: React.FC = () => {
         <Route
           path="logs"
           element={
-            <RequireAdminOrManager>
+            <RequireAdmin>
               <Suspense fallback={<LazyFallback />}>
                 <ActivityLogsPage />
               </Suspense>
-            </RequireAdminOrManager>
+            </RequireAdmin>
           }
         />
         <Route

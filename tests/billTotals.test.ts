@@ -93,26 +93,34 @@ describe('Bill Total Calculations', () => {
 
   it('matches brand discounts case-insensitively and handles whitespace', () => {
     const items = [
-      { qty: 2, unit_price: 500, brand: 'standard' }, // lowercase
-      { qty: 1, unit_price: 1000, brand: 'Standard ' }, // trailing whitespace
-      { qty: 1, unit_price: 500, brand: 'GENERAL' },   // uppercase
+      { qty: 1, unit_price: 1000, brand: 'standard' }, // lowercase 'standard'
+      { qty: 1, unit_price: 500, brand: ' GENERAL ' },  // uppercase with whitespace
     ];
 
     const brandDiscounts = {
       Standard: 70,
-      general: 20,
+      General: 20,
     };
 
     const result = calculateBillTotals(items, 0, brandDiscounts);
+    expect(result.subtotal).toBe(1500);
+    expect(result.discount).toBe(800); // 700 + 100
+    expect(result.total).toBe(700);
+  });
 
-    // standard (1000) + Standard (1000) = 2000 * 70% = 1400 discount
-    // general (500) * 20% = 100 discount
-    // Total discount = 1500
-    // Subtotal = 2500
-    // Total = 1000
-    expect(result.subtotal).toBe(2500);
-    expect(result.discount).toBe(1500);
-    expect(result.total).toBe(1000);
+  it('applies fixed bill discount percentage across all brands when no brand overrides are set', () => {
+    const items = [
+      { qty: 1, unit_price: 1000, brand: 'Standard' },
+      { qty: 1, unit_price: 500, brand: 'General' },
+      { qty: 1, unit_price: 500, brand: 'Sony' },
+    ];
+
+    // 70% flat fixed discount on whole bill
+    const result = calculateBillTotals(items, 70, {});
+    expect(result.subtotal).toBe(2000);
+    expect(result.discountPercent).toBe(70);
+    expect(result.discount).toBe(1400); // 70% of 2000
+    expect(result.total).toBe(600);
   });
 });
 

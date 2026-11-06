@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { db, initLocalDatabase } from '@/db';
-import { Brand, Product, OutboxItem } from '@/types';
+import { Brand, OutboxItem } from '@/types';
 import { syncService } from '@/sync/syncService';
 import { generateUUID } from '@/lib/uuid';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
@@ -13,15 +13,10 @@ import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
-import { Tag, Plus, Edit2, Search, CheckCircle2, XCircle, Sparkles, Percent, RefreshCw, Trash2 } from 'lucide-react';
-import { supabase, isConfigured } from '@/lib/supabase';
-import { useCartStore } from '@/features/billing/store';
+import { Tag, Plus, Edit2, Search, CheckCircle2, XCircle, Sparkles } from 'lucide-react';
 
 const brandSchema = z.object({
   name: z.string().min(1, 'Brand name is required').trim(),
-  has_discount: z.boolean().default(false),
-  discount_percent: z.coerce.number().min(0, 'Discount must be >= 0').max(100, 'Discount must be <= 100').default(0),
-  max_discount: z.coerce.number().min(0, 'Max discount must be >= 0').max(100, 'Max discount must be <= 100').default(0),
   is_active: z.boolean().default(true),
 });
 
@@ -40,147 +35,27 @@ export const BrandsPage: React.FC = () => {
     register,
     handleSubmit,
     reset,
-    watch,
     formState: { errors, isSubmitting },
   } = useForm<BrandFormData>({
     resolver: zodResolver(brandSchema),
     defaultValues: {
       name: '',
-      has_discount: false,
-      discount_percent: 0,
-      max_discount: 0,
       is_active: true,
     },
   });
 
-  const hasDiscountWatched = watch('has_discount');
-
-  const [syncingBrands, setSyncingBrands] = useState(false);
-
-  const loadData = async (syncCloud = true) => {
+  const loadData = async () => {
     setLoading(true);
     try {
-      // 1. Pull latest brands from Supabase if online and configured
-      if (syncCloud && navigator.onLine && isConfigured) {
-        try {
-          const { data: serverBrands, error: sbErr } = await supabase.from('brands').select('*');
-          if (!sbErr && serverBrands && serverBrands.length > 0) {
-            await db.brands.bulkPut(serverBrands as Brand[]);
-          }
-        } catch (err) {
-          console.warn('Could not fetch remote brands from Supabase:', err);
-        }
-      }
-
       let allBrands = await db.brands.toArray();
       if (allBrands.length === 0) {
         await initLocalDatabase();
         allBrands = await db.brands.toArray();
       }
-
-      // Group by normalized lowercase name to automatically eliminate duplicate records
-      const nameGroups = new Map<string, Brand[]>();
-      for (const b of allBrands) {
-        const key = b.name.trim().toLowerCase();
-        if (!nameGroups.has(key)) nameGroups.set(key, []);
-        nameGroups.get(key)!.push(b);
-      }
-
-      const duplicateIdsToDelete: string[] = [];
-      const deduplicatedBrands: Brand[] = [];
-
-      for (const [, list] of nameGroups) {
-        if (list.length === 1) {
-          deduplicatedBrands.push(list[0]);
-        } else {
-          // Sort candidates: prefer newest updated_at, prefer default ID, prefer has_discount
-          list.sort((a, b) => {
-            const timeA = new Date(a.updated_at || a.created_at || 0).getTime();
-            const timeB = new Date(b.updated_at || b.created_at || 0).getTime();
-            if (timeA !== timeB) return timeB - timeA;
-            if (a.id.startsWith('11111111-')) return -1;
-            if (b.id.startsWith('11111111-')) return 1;
-            if (a.has_discount && !b.has_discount) return -1;
-            if (!a.has_discount && b.has_discount) return 1;
-            if (a.is_active && !b.is_active) return -1;
-            if (!a.is_active && b.is_active) return 1;
-            return 0;
-          });
-
-          deduplicatedBrands.push(list[0]);
-          for (let i = 1; i < list.length; i++) {
-            duplicateIdsToDelete.push(list[i].id);
-          }
-        }
-      }
-
-      if (duplicateIdsToDelete.length > 0) {
-        await db.brands.bulkDelete(duplicateIdsToDelete);
-        if (navigator.onLine && isConfigured) {
-          try {
-            await supabase.from('brands').delete().in('id', duplicateIdsToDelete);
-          } catch (delErr) {
-            console.warn('Duplicate brands cloud prune notice:', delErr);
-          }
-        }
-      }
-
-      allBrands = deduplicatedBrands;
-
-      // 2. Auto-discover brands from existing products in catalog
-      const allProducts = await db.products.toArray();
-      const existingNames = new Set(allBrands.map((b) => b.name.toLowerCase().trim()));
-      const discoveredBrands: Brand[] = [];
-      const now = new Date().toISOString();
-
-      allProducts.forEach((p) => {
-        const bName = (p.brand || '').trim();
-        if (bName && !existingNames.has(bName.toLowerCase())) {
-          existingNames.add(bName.toLowerCase());
-          discoveredBrands.push({
-            id: generateUUID(),
-            name: bName,
-            has_discount: false,
-            discount_percent: 0,
-            max_discount: 0,
-            is_active: true,
-            created_at: now,
-            updated_at: now,
-          });
-        }
-      });
-
-      if (discoveredBrands.length > 0) {
-        await db.brands.bulkPut(discoveredBrands);
-        for (const nb of discoveredBrands) {
-          await db.outbox.add({
-            id: generateUUID(),
-            entity: 'brands',
-            op: 'insert',
-            payload: nb,
-            created_at: now,
-            attempts: 0,
-            status: 'pending',
-          });
-        }
-        if (navigator.onLine && isConfigured) {
-          syncService.processOutbox().catch(console.warn);
-        }
-        allBrands = await db.brands.toArray();
-      }
-
-      // 3. Sort brands: Default brands (Standard, General) first, then alphabetically
-      allBrands.sort((a, b) => {
-        if (a.name === 'Standard') return -1;
-        if (b.name === 'Standard') return 1;
-        if (a.name === 'General') return -1;
-        if (b.name === 'General') return 1;
-        return a.name.localeCompare(b.name);
-      });
-
       setBrands(allBrands);
 
-      // 4. Compute product counts per brand
+      // Compute product counts per brand
+      const allProducts = await db.products.toArray();
       const counts: Record<string, number> = {};
       allProducts.forEach((p) => {
         const b = (p.brand || 'General').trim();
@@ -192,32 +67,8 @@ export const BrandsPage: React.FC = () => {
     }
   };
 
-  const handleManualSync = async () => {
-    setSyncingBrands(true);
-    try {
-      await loadData(true);
-      if (navigator.onLine && isConfigured) {
-        await syncService.processOutbox();
-      }
-      toast('Brands successfully synchronized with Cloud & Product Catalog', 'success');
-    } catch (err: any) {
-      toast(`Sync notice: ${err?.message || 'Error syncing brands'}`, 'info');
-    } finally {
-      setSyncingBrands(false);
-    }
-  };
-
   useEffect(() => {
-    loadData(true);
-
-    const onBrandsSynced = () => {
-      loadData(false);
-    };
-
-    window.addEventListener('brands-synced', onBrandsSynced);
-    return () => {
-      window.removeEventListener('brands-synced', onBrandsSynced);
-    };
+    loadData();
   }, []);
 
   const filteredBrands = useMemo(() => {
@@ -231,9 +82,6 @@ export const BrandsPage: React.FC = () => {
     setEditingBrand(null);
     reset({
       name: '',
-      has_discount: false,
-      discount_percent: 0,
-      max_discount: 0,
       is_active: true,
     });
     setIsModalOpen(true);
@@ -243,86 +91,34 @@ export const BrandsPage: React.FC = () => {
     setEditingBrand(brand);
     reset({
       name: brand.name,
-      has_discount: Boolean(brand.has_discount),
-      discount_percent: brand.discount_percent ?? 0,
-      max_discount: brand.max_discount ?? (brand.discount_percent ?? 0),
       is_active: brand.is_active,
     });
     setIsModalOpen(true);
   };
 
-  const [deletingBrand, setDeletingBrand] = useState<Brand | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-
   const onFormSubmit = async (data: BrandFormData) => {
     const trimmedName = data.name.trim();
-    const currentId = editingBrand?.id;
 
-    // Check if this is a rename to an already-existing brand
-    const isRename = editingBrand && editingBrand.name.trim().toLowerCase() !== trimmedName.toLowerCase();
+    // Check unique name constraint
+    const existing = await db.brands
+      .filter((b) => b.name.toLowerCase() === trimmedName.toLowerCase() && b.id !== editingBrand?.id)
+      .first();
 
-    if (!editingBrand) {
-      // Adding new brand: check if name already exists
-      const existing = await db.brands
-        .filter((b) => b.name.trim().toLowerCase() === trimmedName.toLowerCase())
-        .first();
-      if (existing) {
-        toast(`Brand "${trimmedName}" already exists. You can edit it from the list.`, 'error');
-        return;
-      }
-    } else if (isRename) {
-      // Renaming brand: check if new name belongs to another brand
-      const existing = await db.brands
-        .filter((b) => b.name.trim().toLowerCase() === trimmedName.toLowerCase() && b.id !== currentId)
-        .first();
-      if (existing) {
-        toast(`Brand name "${trimmedName}" already belongs to another brand`, 'error');
-        return;
-      }
-    }
-
-    // Ensure valid UUID for brand ID
-    let brandId = editingBrand ? editingBrand.id : generateUUID();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(brandId)) {
-      if (trimmedName.toLowerCase() === 'standard') {
-        brandId = '11111111-2222-3333-4444-555555550001';
-      } else if (trimmedName.toLowerCase() === 'general') {
-        brandId = '11111111-2222-3333-4444-555555550002';
-      } else {
-        brandId = generateUUID();
-      }
+    if (existing) {
+      toast(`Brand "${trimmedName}" already exists`, 'error');
+      return;
     }
 
     const now = new Date().toISOString();
+    const brandId = editingBrand ? editingBrand.id : generateUUID();
+
     const brandRecord: Brand = {
       id: brandId,
       name: trimmedName,
-      has_discount: data.has_discount,
-      discount_percent: data.has_discount ? Number(data.discount_percent) || 0 : 0,
-      max_discount: data.has_discount
-        ? Number(data.max_discount) || Number(data.discount_percent) || 0
-        : 0,
       is_active: data.is_active,
       created_at: editingBrand?.created_at || now,
       updated_at: now,
     };
-
-    // Remove any conflicting duplicates with the same name (case-insensitive) but different IDs
-    const duplicateRecords = await db.brands
-      .filter((b) => b.name.trim().toLowerCase() === trimmedName.toLowerCase() && b.id !== brandId)
-      .toArray();
-
-    if (duplicateRecords.length > 0) {
-      const dupIds = duplicateRecords.map((d) => d.id);
-      await db.brands.bulkDelete(dupIds);
-      if (navigator.onLine && isConfigured) {
-        try {
-          await supabase.from('brands').delete().in('id', dupIds);
-        } catch (delErr) {
-          console.warn('Duplicate brands cloud prune notice:', delErr);
-        }
-      }
-    }
 
     const outboxItem: OutboxItem = {
       id: generateUUID(),
@@ -339,157 +135,10 @@ export const BrandsPage: React.FC = () => {
       await db.outbox.put(outboxItem);
     });
 
-    // Directly upsert to Supabase if online
-    if (navigator.onLine && isConfigured) {
-      try {
-        await supabase.from('brands').upsert({
-          id: brandRecord.id,
-          name: brandRecord.name,
-          has_discount: brandRecord.has_discount,
-          discount_percent: brandRecord.discount_percent,
-          max_discount: brandRecord.max_discount,
-          is_active: brandRecord.is_active,
-          updated_at: brandRecord.updated_at,
-        }, { onConflict: 'id' });
-      } catch (err) {
-        console.warn('Direct brand upsert to Supabase notice:', err);
-      }
-    }
-
-    // If brand was renamed, update linked products to new brand name
-    if (editingBrand && editingBrand.name !== trimmedName) {
-      const oldName = editingBrand.name;
-      const linkedProducts = await db.products
-        .filter((p) => (p.brand || '').toLowerCase().trim() === oldName.toLowerCase().trim())
-        .toArray();
-      if (linkedProducts.length > 0) {
-        const prodsToUpdate: Product[] = [];
-        const prodOutbox: OutboxItem[] = [];
-        for (const p of linkedProducts) {
-          const upd = { ...p, brand: trimmedName, updated_at: now };
-          prodsToUpdate.push(upd);
-          prodOutbox.push({
-            id: generateUUID(),
-            entity: 'products',
-            op: 'update',
-            payload: upd,
-            status: 'pending',
-            attempts: 0,
-            created_at: now,
-          });
-        }
-        await db.transaction('rw', [db.products, db.outbox], async () => {
-          await db.products.bulkPut(prodsToUpdate);
-          await db.outbox.bulkPut(prodOutbox);
-        });
-      }
-    }
-
-    if (navigator.onLine && isConfigured) {
-      syncService.processOutbox().catch(console.warn);
-    }
-
     syncService.updatePendingCount();
-
-    // Immediately update cart store with the updated brand discounts
-    const freshBrands = await db.brands.toArray();
-    useCartStore.getState().initializeBrandDiscounts(freshBrands, true);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('brands-synced'));
-    }
-
     toast(editingBrand ? 'Brand updated successfully' : 'Brand created successfully', 'success');
     setIsModalOpen(false);
-    loadData(false);
-  };
-
-  const handleConfirmDelete = (brand: Brand) => {
-    setDeletingBrand(brand);
-  };
-
-  const handleExecuteDelete = async () => {
-    if (!deletingBrand) return;
-    setIsDeleting(true);
-    try {
-      const now = new Date().toISOString();
-      const brandName = deletingBrand.name;
-      const brandId = deletingBrand.id;
-
-      // 1. If products are linked to this brand, reassign their brand to 'General'
-      const linkedProducts = await db.products
-        .filter((p) => (p.brand || '').toLowerCase().trim() === brandName.toLowerCase().trim())
-        .toArray();
-
-      if (linkedProducts.length > 0) {
-        const updatedProducts: Product[] = [];
-        const productOutbox: OutboxItem[] = [];
-
-        for (const p of linkedProducts) {
-          const upd: Product = { ...p, brand: 'General', updated_at: now };
-          updatedProducts.push(upd);
-          productOutbox.push({
-            id: generateUUID(),
-            entity: 'products',
-            op: 'update',
-            payload: upd,
-            status: 'pending',
-            attempts: 0,
-            created_at: now,
-          });
-        }
-
-        await db.transaction('rw', [db.products, db.outbox], async () => {
-          await db.products.bulkPut(updatedProducts);
-          await db.outbox.bulkPut(productOutbox);
-        });
-      }
-
-      // 2. Delete all records matching this brand name from Dexie
-      const matchingBrands = await db.brands
-        .filter((b) => b.name.toLowerCase().trim() === brandName.toLowerCase().trim() || b.id === brandId)
-        .toArray();
-      const allIds = matchingBrands.map((b) => b.id);
-      if (!allIds.includes(brandId)) {
-        allIds.push(brandId);
-      }
-
-      await db.brands.bulkDelete(allIds);
-
-      // 3. Queue in outbox
-      for (const idToDelete of allIds) {
-        await db.outbox.add({
-          id: generateUUID(),
-          entity: 'brands',
-          op: 'delete',
-          payload: { id: idToDelete, name: brandName },
-          status: 'pending',
-          attempts: 0,
-          created_at: now,
-        });
-      }
-
-      // 4. Remote delete from Supabase if online
-      if (navigator.onLine && isConfigured) {
-        try {
-          await supabase.from('brands').delete().in('id', allIds);
-        } catch (delErr: any) {
-          console.warn('Remote brand delete notice:', delErr?.message);
-        }
-        syncService.processOutbox().catch(console.warn);
-      }
-
-      syncService.updatePendingCount();
-      toast(`Brand "${brandName}" deleted successfully`, 'success');
-      setDeletingBrand(null);
-      if (isModalOpen && editingBrand?.id === brandId) {
-        setIsModalOpen(false);
-      }
-      loadData(false);
-    } catch (err: any) {
-      toast(`Error deleting brand: ${err?.message || 'Unknown error'}`, 'error');
-    } finally {
-      setIsDeleting(false);
-    }
+    loadData();
   };
 
   const handleToggleStatus = async (brand: Brand) => {
@@ -517,11 +166,6 @@ export const BrandsPage: React.FC = () => {
     });
 
     syncService.updatePendingCount();
-    const freshBrands = await db.brands.toArray();
-    useCartStore.getState().initializeBrandDiscounts(freshBrands, true);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('brands-synced'));
-    }
     toast(
       updatedStatus ? `Activated brand ${brand.name}` : `Deactivated brand ${brand.name}`,
       'info'
@@ -547,17 +191,6 @@ export const BrandsPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            onClick={handleManualSync}
-            disabled={syncingBrands || loading}
-            className="font-medium text-xs shadow-subtle gap-1.5"
-            title="Fetch latest brands from Supabase and auto-discover brands from product catalog"
-          >
-            <RefreshCw size={14} className={syncingBrands ? 'animate-spin' : ''} />
-            <span>{syncingBrands ? 'Syncing...' : 'Sync Brands'}</span>
-          </Button>
-
           <Button variant="primary" onClick={handleOpenAdd} className="font-semibold shadow-subtle">
             <Plus size={16} />
             <span>Add Brand</span>
@@ -599,7 +232,6 @@ export const BrandsPage: React.FC = () => {
               <TableRow>
                 <TableHead>Brand Name</TableHead>
                 <TableHead>Products Linked</TableHead>
-                <TableHead>Brand Discount</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -627,20 +259,6 @@ export const BrandsPage: React.FC = () => {
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-background border border-border text-text">
                         {count} {count === 1 ? 'product' : 'products'}
                       </span>
-                    </TableCell>
-
-                    <TableCell>
-                      {brand.has_discount ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-success-light text-success border border-success/30">
-                          <Percent size={11} />
-                          <span>{brand.discount_percent}%</span>
-                          <span className="text-[10px] opacity-75 font-normal">(Max {brand.max_discount || brand.discount_percent}%)</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-text-muted bg-background border border-border">
-                          No Discount
-                        </span>
-                      )}
                     </TableCell>
 
                     <TableCell>
@@ -685,13 +303,6 @@ export const BrandsPage: React.FC = () => {
                         >
                           {brand.is_active ? 'Deactivate' : 'Activate'}
                         </button>
-                        <button
-                          onClick={() => handleConfirmDelete(brand)}
-                          className="p-1.5 text-text-muted hover:text-danger hover:bg-danger-light rounded transition-colors"
-                          title="Delete brand"
-                        >
-                          <Trash2 size={15} />
-                        </button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -724,67 +335,6 @@ export const BrandsPage: React.FC = () => {
             </p>
           </div>
 
-          {/* Brand Discount Configuration */}
-          <div className="p-3 bg-background border border-border rounded space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <label htmlFor="brand_has_discount" className="text-xs font-semibold text-text cursor-pointer flex items-center gap-1.5">
-                  <Percent size={13} className="text-accent" />
-                  <span>Brand Discount Available</span>
-                </label>
-                <p className="text-[11px] text-text-muted">
-                  Enable fixed discount for products under this brand
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                id="brand_has_discount"
-                {...register('has_discount')}
-                className="w-4 h-4 text-accent border-border rounded focus:ring-accent cursor-pointer"
-              />
-            </div>
-
-            {hasDiscountWatched && (
-              <div className="pt-2 border-t border-border/60 grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-text mb-1">
-                    Default Discount (%) <span className="text-danger">*</span>
-                  </label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="100"
-                    placeholder="e.g. 70"
-                    {...register('discount_percent')}
-                    error={errors.discount_percent?.message}
-                  />
-                  <p className="text-[10px] text-text-muted mt-0.5">
-                    Fixed default applied automatically in billing
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-text mb-1">
-                    Max Discount (%) <span className="text-danger">*</span>
-                  </label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="100"
-                    placeholder="e.g. 80"
-                    {...register('max_discount')}
-                    error={errors.max_discount?.message}
-                  />
-                  <p className="text-[10px] text-text-muted mt-0.5">
-                    Highest discount admin can set
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
           <div className="flex items-center gap-2 pt-2">
             <input
               type="checkbox"
@@ -797,78 +347,20 @@ export const BrandsPage: React.FC = () => {
             </label>
           </div>
 
-          <div className="flex items-center justify-between pt-4 border-t border-border">
-            {editingBrand ? (
-              <Button
-                type="button"
-                variant="danger"
-                onClick={() => {
-                  const b = editingBrand;
-                  setIsModalOpen(false);
-                  handleConfirmDelete(b);
-                }}
-                disabled={isSubmitting}
-                className="gap-1.5 text-xs font-semibold"
-              >
-                <Trash2 size={14} />
-                <span>Delete Brand</span>
-              </Button>
-            ) : <div />}
-
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setIsModalOpen(false)}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" variant="primary" disabled={isSubmitting}>
-                {editingBrand ? 'Save Changes' : 'Create Brand'}
-              </Button>
-            </div>
-          </div>
-        </form>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog
-        isOpen={Boolean(deletingBrand)}
-        onClose={() => setDeletingBrand(null)}
-        title={deletingBrand ? `Delete Brand: ${deletingBrand.name}` : 'Delete Brand'}
-      >
-        <div className="space-y-4 pt-2">
-          <p className="text-sm text-text">
-            Are you sure you want to permanently delete brand <strong>"{deletingBrand?.name}"</strong>?
-          </p>
-
-          {Boolean(deletingBrand && productBrandCounts[deletingBrand.name] > 0) && (
-            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded text-xs text-amber-700 dark:text-amber-300">
-              <strong>Notice:</strong> {productBrandCounts[deletingBrand?.name || '']} products are currently assigned to this brand.
-              Deleting this brand will re-assign those products to <strong>General</strong>.
-            </div>
-          )}
-
           <div className="flex justify-end gap-2 pt-4 border-t border-border">
             <Button
+              type="button"
               variant="secondary"
-              onClick={() => setDeletingBrand(null)}
-              disabled={isDeleting}
+              onClick={() => setIsModalOpen(false)}
+              disabled={isSubmitting}
             >
               Cancel
             </Button>
-            <Button
-              variant="danger"
-              onClick={handleExecuteDelete}
-              disabled={isDeleting}
-              className="gap-1.5 font-semibold"
-            >
-              <Trash2 size={14} />
-              <span>{isDeleting ? 'Deleting...' : 'Delete Brand'}</span>
+            <Button type="submit" variant="primary" disabled={isSubmitting}>
+              {editingBrand ? 'Save Changes' : 'Create Brand'}
             </Button>
           </div>
-        </div>
+        </form>
       </Dialog>
     </div>
   );

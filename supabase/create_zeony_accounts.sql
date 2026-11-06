@@ -143,3 +143,4 @@ BEGIN
         RAISE NOTICE 'SUCCESS: Configured public.profiles record for % (Role: %)', r.email, r.role;
     END LOOP;
 END $$;
+

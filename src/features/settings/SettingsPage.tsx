@@ -34,6 +34,7 @@ export const SettingsPage: React.FC = () => {
     receipt_footer: '',
     device_code: 'A',
     paper_size: '80mm',
+    default_discount_percent: 70,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -220,19 +221,30 @@ export const SettingsPage: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
+              label="Default Fixed Discount (%)"
+              type="number"
+              min="0"
+              max="100"
+              value={settings.default_discount_percent ?? ''}
+              onChange={(e) => setSettings({ ...settings, default_discount_percent: parseFloat(e.target.value) || 0 })}
+              placeholder="70"
+              helperText="Default discount percentage auto-applied to all new bills (e.g. 70 for 70% off)."
+            />
+
+            <Input
               label="GSTIN Number (Optional)"
               value={settings.gst_no}
               onChange={(e) => setSettings({ ...settings, gst_no: e.target.value })}
               placeholder="33VNACK0000A1Z5"
             />
-
-            <Input
-              label="Receipt Footer Notice"
-              value={settings.receipt_footer}
-              onChange={(e) => setSettings({ ...settings, receipt_footer: e.target.value })}
-              placeholder="Thank you for choosing VNA Traders!"
-            />
           </div>
+
+          <Input
+            label="Receipt Footer Notice"
+            value={settings.receipt_footer}
+            onChange={(e) => setSettings({ ...settings, receipt_footer: e.target.value })}
+            placeholder="Thank you for choosing VNA Traders!"
+          />
         </div>
 
         {/* Device & Hardware Settings Section */}

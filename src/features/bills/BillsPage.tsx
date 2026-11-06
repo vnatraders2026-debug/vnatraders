@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useCartStore } from '@/features/billing/store';
-import { db, getShopSettings, restoreMissingBills } from '@/db';
-import { Bill, BillItem, Profile, ShopSettings, PaymentMode } from '@/types';
+import { db, getShopSettings } from '@/db';
+import { Bill, BillItem, Profile, ShopSettings } from '@/types';
 import { formatINR, formatISTDate, consolidateBillItems } from '@/lib/format';
 import { checkBillEditPermission } from '@/lib/permissions';
 import { ReceiptModal } from '@/features/billing/ReceiptModal';
@@ -15,16 +15,13 @@ import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { useToast } from '@/components/ui/Toast';
 import { Search, Eye, Edit3, Printer, MessageSquare, RefreshCw } from 'lucide-react';
 import { syncService } from '@/sync/syncService';
 import { supabase, isConfigured } from '@/lib/supabase';
-import { generateUUID } from '@/lib/uuid';
 
 export const BillsPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast();
 
   const [bills, setBills] = useState<Bill[]>([]);
   const [profiles, setProfiles] = useState<Map<string, Profile>>(new Map());
@@ -55,38 +52,12 @@ export const BillsPage: React.FC = () => {
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      // 1. Recover any bills that were stored in outbox or activity_logs
-      await restoreMissingBills();
-
-      // 2. Fetch all local bills safely
-      let allBills = await db.bills.toArray();
-      allBills.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-
-      // 3. If online, pull from Supabase to merge any cloud bills created on other terminals
-      if (navigator.onLine && isConfigured) {
-        try {
-          const { data: serverBills, error: sbErr } = await supabase
-            .from('bills')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(500);
-
-          if (!sbErr && serverBills && serverBills.length > 0) {
-            const mapped = serverBills.map((b: any) => ({ ...b, sync_status: 'synced' as const }));
-            await db.bills.bulkPut(mapped);
-            allBills = await db.bills.toArray();
-            allBills.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-          }
-        } catch (fetchErr) {
-          console.warn('Direct cloud bills load notice:', fetchErr);
-        }
-      }
-
-      setBills(allBills);
-
+      const allBills = await db.bills.orderBy('created_at').reverse().toArray();
       const allProfiles = await db.profiles.toArray();
       const profMap = new Map<string, Profile>();
       allProfiles.forEach((p) => profMap.set(p.id, p));
+
+      setBills(allBills);
       setProfiles(profMap);
 
       const settings = await getShopSettings();
@@ -99,15 +70,10 @@ export const BillsPage: React.FC = () => {
   const handleSyncCloud = async () => {
     setIsSyncing(true);
     try {
-      await restoreMissingBills();
-      if (navigator.onLine && isConfigured) {
-        await syncService.processOutbox();
-        await syncService.pullUpdates();
-      }
-      await loadData(false);
-      toast('Bills synchronized successfully', 'success');
-    } catch (err: any) {
-      toast(`Sync notice: ${err?.message || 'Error syncing'}`, 'info');
+      await syncService.forceFreshPullFromSupabase();
+      await loadData(true);
+    } catch (err) {
+      console.warn('Manual sync notice:', err);
     } finally {
       setIsSyncing(false);
     }
@@ -298,49 +264,6 @@ export const BillsPage: React.FC = () => {
     navigate('/billing');
   };
 
-  const handleUpdateBillPaymentMode = async (billId: string, newMode: PaymentMode) => {
-    const targetBill = bills.find((b) => b.id === billId);
-    if (!targetBill || targetBill.payment_mode === newMode) return;
-
-    const now = new Date().toISOString();
-    const updated: Bill = {
-      ...targetBill,
-      payment_mode: newMode,
-      updated_at: now,
-    };
-
-    setBills((prev) => prev.map((b) => (b.id === billId ? updated : b)));
-    if (viewingBill && viewingBill.bill.id === billId) {
-      setViewingBill({ ...viewingBill, bill: updated });
-    }
-
-    try {
-      await db.bills.update(billId, {
-        payment_mode: newMode,
-        updated_at: now,
-      });
-
-      await db.outbox.add({
-        id: generateUUID(),
-        entity: 'bills',
-        op: 'update',
-        payload: updated,
-        status: 'pending',
-        attempts: 0,
-        created_at: now,
-      });
-
-      syncService.updatePendingCount();
-      if (navigator.onLine) {
-        syncService.triggerSync().catch(console.warn);
-      }
-      toast(`Payment mode for ${targetBill.bill_no} updated to ${newMode.toUpperCase()}`, 'success');
-    } catch (err: any) {
-      console.warn('Error updating payment mode:', err);
-      toast(`Failed to update payment mode: ${err?.message || 'Error'}`, 'error');
-    }
-  };
-
   return (
     <div className="space-y-4">
       {/* Search and Filters Header */}
@@ -461,17 +384,8 @@ export const BillsPage: React.FC = () => {
                       <TableCell className="text-right font-semibold tabular-nums">
                         {formatINR(b.total)}
                       </TableCell>
-                      <TableCell>
-                        <select
-                          value={b.payment_mode}
-                          onChange={(e) => handleUpdateBillPaymentMode(b.id, e.target.value as PaymentMode)}
-                          className="text-xs font-bold uppercase py-0.5 px-1.5 bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
-                          title="Click to update payment mode"
-                        >
-                          <option value="cash">CASH</option>
-                          <option value="upi">UPI</option>
-                          <option value="card">CARD</option>
-                        </select>
+                      <TableCell className="uppercase text-xs font-medium text-text">
+                        {b.payment_mode}
                       </TableCell>
                       <TableCell className="text-xs text-text">
                         {staff ? staff.full_name : 'Staff'}
@@ -578,19 +492,13 @@ export const BillsPage: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="flex justify-between items-center text-xs text-text-muted">
+                  <div className="flex justify-between text-xs text-text-muted">
                     <span>
                       Customer: <span className="font-medium text-text">{b.customer_name || 'Walk-in'}</span>
                     </span>
-                    <select
-                      value={b.payment_mode}
-                      onChange={(e) => handleUpdateBillPaymentMode(b.id, e.target.value as PaymentMode)}
-                      className="text-xs font-bold uppercase py-0.5 px-1 bg-surface border border-border rounded"
-                    >
-                      <option value="cash">CASH</option>
-                      <option value="upi">UPI</option>
-                      <option value="card">CARD</option>
-                    </select>
+                    <span className="uppercase font-medium text-text">
+                      {b.payment_mode}
+                    </span>
                   </div>
 
                   <div className="flex flex-col xs:flex-row justify-between items-start xs:items-center pt-2 border-t border-border gap-2">
@@ -680,16 +588,8 @@ export const BillsPage: React.FC = () => {
                 )}
               </div>
               <div>
-                <span className="text-text-muted block mb-0.5">Payment Mode:</span>
-                <select
-                  value={viewingBill.bill.payment_mode}
-                  onChange={(e) => handleUpdateBillPaymentMode(viewingBill.bill.id, e.target.value as PaymentMode)}
-                  className="text-xs font-bold uppercase py-0.5 px-2 bg-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
-                >
-                  <option value="cash">CASH</option>
-                  <option value="upi">UPI</option>
-                  <option value="card">CARD</option>
-                </select>
+                <span className="text-text-muted block">Payment Mode:</span>
+                <span className="font-medium uppercase text-text">{viewingBill.bill.payment_mode}</span>
               </div>
             </div>
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Bill, BillItem, ShopSettings } from '@/types';
-import { formatNumber, formatDateDMY, numberToWordsINR, consolidateBillItems } from '@/lib/format';
+import { formatNumber, formatDateDMY, numberToWordsINR, consolidateBillItems, getEffectiveBrandDiscount } from '@/lib/format';
 import { QR_CODE_DATA_URI } from '@/assets/qrCodeDataUri';
 
 interface A4InvoiceCardProps {
@@ -60,33 +60,10 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
     }
   });
 
-  // Check if brand_discounts is configured on this bill
-  const hasBrandDiscounts =
-    Boolean(bill.brand_discounts) &&
-    Object.keys(bill.brand_discounts || {}).length > 0 &&
-    Object.values(bill.brand_discounts || {}).some((pct) => (pct || 0) > 0);
-
   // Helper to get discount percentage strictly matching thermal printer logic
+  const generalDiscountPct = bill.subtotal > 0 && bill.discount > 0 ? (bill.discount / bill.subtotal) * 100 : 0;
   const getBrandDiscountPercent = (bName: string): number => {
-    if (hasBrandDiscounts && bill.brand_discounts) {
-      const target = bName.trim().toLowerCase();
-      // Case-insensitive lookup in bill.brand_discounts
-      for (const [key, val] of Object.entries(bill.brand_discounts)) {
-        if (key.trim().toLowerCase() === target) {
-          return Math.max(0, Math.min(100, val || 0));
-        }
-      }
-      // If brand_discounts is active but this specific brand has no discount, it is strictly 0%!
-      // Never apply an auto/distributed discount to brands without discount.
-      return 0;
-    }
-
-    // Only if NO brand-specific discounts were defined and there is a general bill discount
-    if (bill.discount > 0 && bill.subtotal > 0) {
-      return Math.max(0, Math.min(100, Math.round((bill.discount / bill.subtotal) * 10000) / 100));
-    }
-
-    return 0;
+    return getEffectiveBrandDiscount(bName, bill.brand_discounts, generalDiscountPct);
   };
 
   // Sort keys to show Standard first, then alphabetical
@@ -186,17 +163,11 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
           <div>
             <span className="font-semibold">To</span>{' '}
             <span className="font-bold">
-              {bill.customer_name ? bill.customer_name : `${(bill.payment_mode || 'cash').toUpperCase()} BILL`}
+              {bill.customer_name ? bill.customer_name : 'Cash Bill'}
             </span>
             {bill.customer_phone && (
               <span className="text-slate-600 ml-1">({bill.customer_phone})</span>
             )}
-            <div className="text-[11px] font-semibold text-slate-700 mt-0.5">
-              <span>Payment Mode: </span>
-              <span className="font-black uppercase text-slate-900 px-1 py-0.2 rounded bg-slate-100 border border-slate-300">
-                {bill.payment_mode || 'cash'}
-              </span>
-            </div>
           </div>
           <div className="text-right space-y-0.5">
             <div>
@@ -206,10 +177,6 @@ export const A4InvoiceCard: React.FC<A4InvoiceCardProps> = ({
             <div>
               <span className="text-slate-600">Date :</span>{' '}
               <span className="font-bold">{formatDateDMY(bill.created_at)}</span>
-            </div>
-            <div>
-              <span className="text-slate-600">Payment :</span>{' '}
-              <span className="font-bold uppercase text-slate-900">{bill.payment_mode || 'cash'}</span>
             </div>
             <div>
               <span className="text-slate-600">Page :</span>{' '}

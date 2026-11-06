@@ -33,31 +33,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent
     { to: '/brands', label: 'Brands', icon: Tag },
   ];
 
-  const cashierNavItems = [
-    { to: '/billing', label: 'New Bill', icon: FilePlus2 },
-    { to: '/bills', label: 'Bills', icon: Receipt },
-    { to: '/products', label: 'Products', icon: Boxes },
-  ];
-
-  const supervisorNavItems = [
-    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/billing', label: 'New Bill', icon: FilePlus2 },
-    { to: '/bills', label: 'Bills', icon: Receipt },
-    { to: '/products', label: 'Products', icon: Boxes },
-    { to: '/brands', label: 'Brands', icon: Tag },
-    { to: '/reports', label: 'Reports', icon: BarChart3 },
-  ];
-
-  const managerNavItems = [
-    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/billing', label: 'New Bill', icon: FilePlus2 },
-    { to: '/bills', label: 'Bills', icon: Receipt },
-    { to: '/products', label: 'Products', icon: Boxes },
-    { to: '/brands', label: 'Brands', icon: Tag },
-    { to: '/reports', label: 'Reports', icon: BarChart3 },
-    { to: '/logs', label: 'Activity Logs', icon: ScrollText },
-  ];
-
   const adminNavItems = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/billing', label: 'New Bill', icon: FilePlus2 },
@@ -70,23 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent
     { to: '/settings', label: 'Settings', icon: Settings },
   ];
 
-  const getNavItems = () => {
-    switch (role) {
-      case 'admin':
-        return adminNavItems;
-      case 'manager':
-        return managerNavItems;
-      case 'supervisor':
-        return supervisorNavItems;
-      case 'cashier':
-        return cashierNavItems;
-      case 'staff':
-      default:
-        return staffNavItems;
-    }
-  };
-
-  const navItems = getNavItems();
+  const navItems = role === 'admin' ? adminNavItems : staffNavItems;
 
   const content = (
     <div className="flex flex-col h-full bg-surface border-r border-border select-none">

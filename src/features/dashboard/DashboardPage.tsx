@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { db, restoreMissingBills } from '@/db';
+import { db } from '@/db';
 import { TargetProgress } from '@/types';
 import { formatINR, formatISTDate, formatNumber } from '@/lib/format';
 import {
@@ -53,7 +53,6 @@ export const DashboardPage: React.FC = () => {
   const { data, isLoading } = useQuery({
     queryKey: ['admin_dashboard_metrics', dateRange],
     queryFn: async () => {
-      await restoreMissingBills();
       const allBills = await db.bills.toArray();
       const allItems = await db.bill_items.toArray();
       const allLogs = await db.activity_logs.orderBy('id').reverse().limit(10).toArray();

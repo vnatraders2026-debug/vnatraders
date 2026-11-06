@@ -1,5 +1,5 @@
 import { Bill, BillItem, ShopSettings } from '@/types';
-import { formatISTDate } from '@/lib/format';
+import { formatISTDate, getEffectiveBrandDiscount } from '@/lib/format';
 
 /**
  * ESC/POS Command Constants for Thermal Receipt Printers
@@ -138,25 +138,9 @@ export function buildEscPosReceipt(
     }
   });
 
-  const hasBrandDiscounts =
-    Boolean(bill.brand_discounts) &&
-    Object.keys(bill.brand_discounts || {}).length > 0 &&
-    Object.values(bill.brand_discounts || {}).some((pct) => (pct || 0) > 0);
-
+  const generalDiscountPct = bill.subtotal > 0 && bill.discount > 0 ? (bill.discount / bill.subtotal) * 100 : 0;
   const getBrandDiscountPercent = (bName: string): number => {
-    if (hasBrandDiscounts && bill.brand_discounts) {
-      const target = bName.trim().toLowerCase();
-      for (const [key, val] of Object.entries(bill.brand_discounts)) {
-        if (key.trim().toLowerCase() === target) {
-          return Math.max(0, Math.min(100, val || 0));
-        }
-      }
-      return 0;
-    }
-    if (bill.discount > 0 && bill.subtotal > 0) {
-      return Math.max(0, Math.min(100, Math.round((bill.discount / bill.subtotal) * 10000) / 100));
-    }
-    return 0;
+    return getEffectiveBrandDiscount(bName, bill.brand_discounts, generalDiscountPct);
   };
 
   const sortedKeys = Array.from(groupsMap.keys()).sort((a, b) => {

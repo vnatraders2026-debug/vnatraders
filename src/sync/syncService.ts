@@ -2,7 +2,6 @@ import { db } from '@/db';
 import { supabase, isConfigured } from '@/lib/supabase';
 import { OutboxItem, Product, Brand, Category, BillItem, Profile } from '@/types';
 import { createProductSearchIndex } from '@/db/search';
-import { generateUUID } from '@/lib/uuid';
 
 export type SyncStatusState = 'online' | 'offline' | 'syncing' | 'error';
 
@@ -194,15 +193,13 @@ class SyncService {
 
     if (item.entity === 'bills') {
       const { items, sync_status, ...rawBill } = item.payload;
-      // Ensure created_by links to active cloud authenticated user or null
+      // Ensure created_by links to active cloud authenticated user
       let createdBy = rawBill.created_by;
       const { data: { user } } = await supabase.auth.getUser();
-      if (user?.id) {
+      if (user) {
         createdBy = user.id;
-      } else if (createdBy && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(createdBy)) {
-        // Keep valid UUID
-      } else {
-        createdBy = null;
+      } else if (!createdBy || createdBy.startsWith('00000000')) {
+        createdBy = 'c1e93b7c-8dad-426c-86d9-add42e0fa123';
       }
 
       // Explicitly construct clean payload matching Supabase public.bills columns
@@ -308,31 +305,9 @@ class SyncService {
 
       if (error) throw new Error(`Product sync error: ${error.message}`);
     } else if (item.entity === 'brands') {
-      const { id, name, has_discount, discount_percent, max_discount, is_active } = item.payload;
+      const { id, name, is_active } = item.payload;
       try {
-        let validId = id;
-        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validId)) {
-          const lowerName = (name || '').trim().toLowerCase();
-          if (lowerName === 'standard') validId = '11111111-2222-3333-4444-555555550001';
-          else if (lowerName === 'general') validId = '11111111-2222-3333-4444-555555550002';
-          else validId = generateUUID();
-        }
-
-        if (item.op === 'delete') {
-          const { error: delErr } = await supabase.from('brands').delete().eq('id', validId);
-          if (delErr) {
-            console.warn('Brands cloud delete notice:', delErr.message);
-          }
-        } else {
-          await supabase.from('brands').upsert({
-            id: validId,
-            name,
-            has_discount: has_discount ?? false,
-            discount_percent: discount_percent ?? 0,
-            max_discount: max_discount ?? 0,
-            is_active,
-          }, { onConflict: 'id' });
-        }
+        await supabase.from('brands').upsert({ id, name, is_active }, { onConflict: 'id' });
       } catch (err: any) {
         console.warn('Brands table sync notice:', err?.message);
       }
@@ -396,17 +371,41 @@ class SyncService {
       await db.sync_meta.put({ table_name: 'products', last_synced_at: latestProdDate });
     }
 
-    // 2. Pull Bills from Cloud (safely merge into local IndexedDB without deleting local bills)
-    try {
-      const { data: serverBills, error: billErr } = await supabase
-        .from('bills')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1000);
+    // 2. Pull Bills from Cloud (reconcile deleted bills across devices)
+    const { data: serverBills, error: billErr } = await supabase
+      .from('bills')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
 
-      if (!billErr && serverBills && serverBills.length > 0) {
+    if (!billErr && serverBills !== null) {
+      const serverBillIds = new Set((serverBills || []).map((b: any) => b.id));
+
+      // Remove any local bills that were deleted on Supabase
+      const allLocalBills = await db.bills.toArray();
+      const pendingOutbox = await db.outbox
+        .where('entity')
+        .equals('bills')
+        .and((o) => o.status === 'pending' || o.status === 'syncing')
+        .toArray();
+      const pendingOutboxBillIds = new Set(pendingOutbox.map((o) => o.payload?.id));
+
+      const deletedLocalIds = allLocalBills
+        .filter((b) => !serverBillIds.has(b.id) && !pendingOutboxBillIds.has(b.id))
+        .map((b) => b.id);
+
+      if (deletedLocalIds.length > 0) {
+        await db.bills.bulkDelete(deletedLocalIds);
+        await db.bill_items.where('bill_id').anyOf(deletedLocalIds).delete();
+      }
+      if (serverBills.length === 0 && pendingOutboxBillIds.size === 0) {
+        await db.bills.clear();
+        await db.bill_items.clear();
+      }
+
+      // If server has bills, put them in local IndexedDB
+      if (serverBills && serverBills.length > 0) {
         const mapped = serverBills.map((b: any) => ({ ...b, sync_status: 'synced' as const }));
-        // Merge cloud bills into local Dexie database (never delete local bills)
         await db.bills.bulkPut(mapped);
 
         // Fetch items for pulled bills in batches of 30 to avoid URL length overflow
@@ -427,16 +426,16 @@ class SyncService {
           }
         }
         if (allItems.length > 0) {
+          const fetchedBillIds = Array.from(new Set(allItems.map((it) => it.bill_id)));
+          await db.bill_items.where('bill_id').anyOf(fetchedBillIds).delete();
           await db.bill_items.bulkPut(allItems);
         }
-
-        // Notify UI screens that bills have synced from cloud
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('bills-synced'));
-        }
       }
-    } catch (bErr) {
-      console.warn('Bills background sync notice:', bErr);
+
+      // Notify UI screens that bills have synced from cloud
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('bills-synced'));
+      }
     }
 
     // 3. Pull Profiles
@@ -479,33 +478,6 @@ class SyncService {
     } catch (logsErr) {
       console.warn('Activity logs background sync notice:', logsErr);
     }
-
-    // 6. Pull Brands from Cloud
-    try {
-      const { data: serverBrands, error: bErr } = await supabase.from('brands').select('*');
-      if (!bErr && serverBrands && serverBrands.length > 0) {
-        await db.brands.bulkPut(serverBrands as Brand[]);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('brands-synced'));
-        }
-      }
-    } catch (bErr) {
-      console.warn('Brands background sync notice:', bErr);
-    }
-
-    // 7. Pull Categories from Cloud
-    try {
-      const { data: serverCats, error: cErr } = await supabase.from('categories').select('*');
-      if (!cErr && serverCats && serverCats.length > 0) {
-        const activeOnly = serverCats.filter((c: any) => c.is_active !== false);
-        await db.categories.bulkPut(activeOnly as Category[]);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('categories-synced'));
-        }
-      }
-    } catch (cErr) {
-      console.warn('Categories background sync notice:', cErr);
-    }
   }
 
   /**
@@ -524,11 +496,15 @@ class SyncService {
     this.notify();
 
     try {
-      // 1. Clear cached local products, sync metadata, and categories (never wipe bills!)
-      await db.transaction('rw', [db.products, db.sync_meta, db.categories, db.outbox], async () => {
+      // 1. Clear cached local products, sync metadata, bills, and bill_items
+      await db.transaction('rw', [db.products, db.sync_meta, db.bills, db.bill_items, db.categories, db.outbox], async () => {
         await db.products.clear();
         await db.sync_meta.clear();
+        await db.bills.clear();
+        await db.bill_items.clear();
         await db.categories.clear();
+        await db.outbox.where('entity').equals('bills').delete();
+        await db.outbox.where('entity').equals('bill_items').delete();
         await db.outbox.where('entity').equals('categories').delete();
       });
 

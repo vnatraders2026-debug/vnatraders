@@ -6,29 +6,8 @@ export function isAdmin(profile?: Profile | null): boolean {
   return profile?.role === 'admin' && profile?.is_active === true;
 }
 
-export function isManager(profile?: Profile | null): boolean {
-  return profile?.role === 'manager' && profile?.is_active === true;
-}
-
-export function isSupervisor(profile?: Profile | null): boolean {
-  return profile?.role === 'supervisor' && profile?.is_active === true;
-}
-
-export function canViewAnalytics(profile?: Profile | null): boolean {
-  if (!profile || !profile.is_active) return false;
-  return ['admin', 'manager', 'supervisor'].includes(profile.role);
-}
-
-export function canManageUsers(profile?: Profile | null): boolean {
-  return profile?.role === 'admin' && profile?.is_active === true;
-}
-
-export function canModifyDiscounts(profile?: Profile | null): boolean {
-  return profile?.role === 'admin' && profile?.is_active === true;
-}
-
 export function isStaff(profile?: Profile | null): boolean {
-  return (profile?.role === 'staff' || profile?.role === 'cashier') && profile?.is_active === true;
+  return profile?.role === 'staff' && profile?.is_active === true;
 }
 
 export interface BillEditPermission {
@@ -39,8 +18,8 @@ export interface BillEditPermission {
 
 /**
  * Checks if a user is allowed to edit a bill.
- * Admins, Managers, and Supervisors can edit anytime.
- * Staff and Cashiers can edit ONLY if they created it AND it is within 10 minutes of its creation time.
+ * Admins can edit anytime.
+ * Staff can edit ONLY if they created it AND it is within 10 minutes of its creation time.
  */
 export function checkBillEditPermission(
   bill: Bill,
@@ -55,15 +34,15 @@ export function checkBillEditPermission(
     };
   }
 
-  // Admin, Manager, and Supervisor can edit any bill at any time
-  if (['admin', 'manager', 'supervisor'].includes(profile.role)) {
+  // Admin can edit any bill at any time
+  if (profile.role === 'admin') {
     return {
       canEdit: true,
       remainingMs: Infinity,
     };
   }
 
-  // Staff/Cashier check: creator match
+  // Staff check: creator match
   if (bill.created_by !== profile.id) {
     return {
       canEdit: false,

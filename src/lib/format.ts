@@ -158,32 +158,40 @@ export function calculateBillTotals(
     const qty = Math.max(0, item.qty || 0);
     const price = Math.max(0, item.unit_price || 0);
     const lineTotal = Math.round(qty * price * 100) / 100;
-    const rawBrand = (item.brand || 'Standard').trim();
-    const brand = rawBrand || 'Standard';
+    const brand = (item.brand || 'Standard').trim() || 'Standard';
     brandSubtotals[brand] = (brandSubtotals[brand] || 0) + lineTotal;
   });
 
   const rawSubtotal = Object.values(brandSubtotals).reduce((sum, v) => sum + v, 0);
   const subtotal = Math.round(rawSubtotal * 100) / 100;
 
-  // Build case-insensitive lookup map for brand discounts
-  const normalizedDiscounts = new Map<string, number>();
-  if (brandDiscounts) {
-    for (const [key, val] of Object.entries(brandDiscounts)) {
-      normalizedDiscounts.set(key.trim().toLowerCase(), Math.max(0, Math.min(100, Number(val) || 0)));
-    }
-  }
-
   const hasBrandDiscounts =
-    Array.from(normalizedDiscounts.values()).some((pct) => pct > 0);
+    brandDiscounts &&
+    Object.keys(brandDiscounts).length > 0 &&
+    Object.values(brandDiscounts).some((pct) => pct > 0);
 
   const brandTotals: Record<string, BrandTotalBreakdown> = {};
   let totalDiscount = 0;
 
+  // Case-insensitive brand discount lookup
+  const getBrandDiscountPct = (bName: string): number => {
+    if (!brandDiscounts) return 0;
+    const target = bName.trim().toLowerCase();
+    for (const [k, v] of Object.entries(brandDiscounts)) {
+      if (k.trim().toLowerCase() === target) {
+        return Math.max(0, Math.min(100, Number(v) || 0));
+      }
+    }
+    return 0;
+  };
+
   if (hasBrandDiscounts) {
     Object.entries(brandSubtotals).forEach(([brand, bSub]) => {
-      const lower = brand.trim().toLowerCase();
-      const bPct = normalizedDiscounts.has(lower) ? normalizedDiscounts.get(lower)! : 0;
+      // Lookup case-insensitively; if brand has no specific override, fall back to discountPercent
+      let bPct = getBrandDiscountPct(brand);
+      if (bPct === 0 && discountPercent > 0 && !(brand.toLowerCase() in brandDiscounts)) {
+        bPct = Math.max(0, Math.min(100, Math.round(discountPercent * 100) / 100));
+      }
       const bDisc = Math.round(((bSub * bPct) / 100) * 100) / 100;
       totalDiscount += bDisc;
       brandTotals[brand] = {
@@ -219,6 +227,29 @@ export function calculateBillTotals(
     total,
     brandTotals,
   };
+}
+
+/**
+ * Look up brand-specific discount with case-insensitivity, falling back to general bill discount
+ */
+export function getEffectiveBrandDiscount(
+  brandName: string,
+  brandDiscounts?: Record<string, number>,
+  generalDiscountPercent: number = 0
+): number {
+  if (brandDiscounts && Object.keys(brandDiscounts).length > 0 && Object.values(brandDiscounts).some((v) => (v || 0) > 0)) {
+    const target = (brandName || 'Standard').trim().toLowerCase();
+    for (const [k, v] of Object.entries(brandDiscounts)) {
+      if (k.trim().toLowerCase() === target) {
+        return Math.max(0, Math.min(100, Number(v) || 0));
+      }
+    }
+    if (generalDiscountPercent > 0) {
+      return Math.max(0, Math.min(100, Number(generalDiscountPercent) || 0));
+    }
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Number(generalDiscountPercent) || 0));
 }
 
 /**

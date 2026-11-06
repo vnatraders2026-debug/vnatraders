@@ -1,6 +1,6 @@
 import React from 'react';
 import { Bill, BillItem, ShopSettings } from '@/types';
-import { formatINR, formatISTDate, formatNumber, consolidateBillItems } from '@/lib/format';
+import { formatINR, formatISTDate, formatNumber, consolidateBillItems, getEffectiveBrandDiscount } from '@/lib/format';
 import { QR_CODE_DATA_URI } from '@/assets/qrCodeDataUri';
 
 interface ReceiptCardProps {
@@ -29,27 +29,10 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
     return consolidateBillItems(items);
   }, [items]);
 
-  // Check if brand_discounts is configured on this bill
-  const hasBrandDiscounts =
-    Boolean(bill.brand_discounts) &&
-    Object.keys(bill.brand_discounts || {}).length > 0 &&
-    Object.values(bill.brand_discounts || {}).some((pct) => (pct || 0) > 0);
-
   // Helper to get discount percentage strictly matching A4 invoice logic
+  const generalDiscountPct = bill.subtotal > 0 && bill.discount > 0 ? (bill.discount / bill.subtotal) * 100 : 0;
   const getBrandDiscountPercent = (bName: string): number => {
-    if (hasBrandDiscounts && bill.brand_discounts) {
-      const target = bName.trim().toLowerCase();
-      for (const [key, val] of Object.entries(bill.brand_discounts)) {
-        if (key.trim().toLowerCase() === target) {
-          return Math.max(0, Math.min(100, val || 0));
-        }
-      }
-      return 0;
-    }
-    if (bill.discount > 0 && bill.subtotal > 0) {
-      return Math.max(0, Math.min(100, Math.round((bill.discount / bill.subtotal) * 10000) / 100));
-    }
-    return 0;
+    return getEffectiveBrandDiscount(bName, bill.brand_discounts, generalDiscountPct);
   };
 
   // Group items by brand/category
@@ -142,14 +125,10 @@ export const ReceiptCard: React.FC<ReceiptCardProps> = ({
       <div className="text-center text-[11px] font-bold text-black space-y-0.5">
         <div>Bill: <span className="font-mono text-black font-black">{bill.bill_no}</span></div>
         <div className="text-black font-semibold text-[10px]">{formatISTDate(bill.created_at)}</div>
-        {(bill.customer_name || bill.customer_phone) ? (
+        {(bill.customer_name || bill.customer_phone) && (
           <div className="text-[10px] font-medium text-black pt-0.5">
             {bill.customer_name && <span>Customer: <strong className="text-black font-bold">{bill.customer_name}</strong> </span>}
             {bill.customer_phone && <span className="font-semibold text-black">({bill.customer_phone})</span>}
-          </div>
-        ) : (
-          <div className="text-[10px] font-bold text-black uppercase pt-0.5">
-            [ {(bill.payment_mode || 'cash').toUpperCase()} COUNTER SALE ]
           </div>
         )}
       </div>

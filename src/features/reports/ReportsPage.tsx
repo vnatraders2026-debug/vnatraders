@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db, restoreMissingBills } from '@/db';
+import { db } from '@/db';
 import { Bill, BillItem, Profile } from '@/types';
 import { formatINR, formatISTDate } from '@/lib/format';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
@@ -30,7 +30,6 @@ export const ReportsPage: React.FC = () => {
     async function loadData() {
       setLoading(true);
       try {
-        await restoreMissingBills();
         const allBills = await db.bills.toArray();
         const allItems = await db.bill_items.toArray();
         const allProfiles = await db.profiles.toArray();
