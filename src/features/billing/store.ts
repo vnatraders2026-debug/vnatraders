@@ -24,6 +24,7 @@ interface CartState {
   customer_name: string;
   customer_phone: string;
   discount_percent: number;
+  defaultBrandDiscounts: Record<string, number>;
   brand_discounts: Record<string, number>;
   payment_mode: PaymentMode;
   editingBillId: string | null;
@@ -54,14 +55,31 @@ interface CartState {
   saveBill: (currentUser: Profile) => Promise<{ bill: Bill; items: BillItem[] }>;
 }
 
+const CRACKER_CATEGORIES_LOWER = new Set([
+  'sparklers',
+  'ground chakkars',
+  'flower pots',
+  'rockets',
+  'bombs & sound crackers',
+  'bijili crackers',
+  'single & multi shots',
+  'fancy sky shots',
+]);
+
 function resolveItemBrand(brand?: string | null, category?: string | null): string {
   const b = (brand || '').trim();
-  if (b) return b;
   const c = (category || '').trim();
-  if (c && (c.toLowerCase() === 'standard' || c.toLowerCase() === 'net' || c.toLowerCase() === 'general')) {
-    return c;
+
+  // If brand is explicitly set and not mistakenly equal to a category name
+  if (b && !CRACKER_CATEGORIES_LOWER.has(b.toLowerCase())) {
+    return b;
   }
-  return c || 'Standard';
+
+  // Check category hint
+  if (c && (c.toLowerCase() === 'general' || c.toLowerCase() === 'net')) {
+    return 'General';
+  }
+  return 'Standard';
 }
 
 export const useCartStore = create<CartState>((set, get) => ({
@@ -69,7 +87,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   customer_name: '',
   customer_phone: '',
   discount_percent: 0,
-  brand_discounts: {},
+  defaultBrandDiscounts: { Standard: 70, General: 0 },
+  brand_discounts: { Standard: 70, General: 0 },
   payment_mode: 'cash',
   editingBillId: null,
   editingBillNo: null,
@@ -182,12 +201,18 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   setBrandDiscount: (brand: string, percent: number) => {
     const validPct = Math.max(0, Math.min(100, Math.round(percent * 100) / 100));
-    set((state) => ({
-      brand_discounts: {
-        ...state.brand_discounts,
-        [brand]: validPct,
-      },
-    }));
+    set((state) => {
+      const updated = { ...state.brand_discounts };
+      const target = brand.trim().toLowerCase();
+      // Remove any case variation key
+      for (const k of Object.keys(updated)) {
+        if (k.trim().toLowerCase() === target && k !== brand) {
+          delete updated[k];
+        }
+      }
+      updated[brand] = validPct;
+      return { brand_discounts: updated };
+    });
   },
 
   clearBrandDiscounts: () => set({ brand_discounts: {} }),
@@ -195,28 +220,47 @@ export const useCartStore = create<CartState>((set, get) => ({
   initializeBrandDiscounts: (brands: Brand[]) => {
     if (!brands || brands.length === 0) return;
     set((state) => {
-      const updated = { ...state.brand_discounts };
-      let changed = false;
+      const defaults: Record<string, number> = { ...state.defaultBrandDiscounts };
       brands.forEach((b) => {
-        if (b.is_active && b.has_discount && (updated[b.name] === undefined || updated[b.name] === null)) {
-          updated[b.name] = Number(b.discount_percent) || 0;
-          changed = true;
+        if (b.is_active && b.has_discount) {
+          defaults[b.name] = Number(b.discount_percent) || 0;
+        } else if (b.is_active && !b.has_discount) {
+          defaults[b.name] = 0;
         }
       });
-      return changed ? { brand_discounts: updated } : state;
+      if (defaults['Standard'] === undefined || defaults['Standard'] === 0) {
+        defaults['Standard'] = 70;
+      }
+      const updated = { ...defaults, ...state.brand_discounts };
+      // Make sure all defaults are populated
+      Object.entries(defaults).forEach(([bName, dPct]) => {
+        if (updated[bName] === undefined || updated[bName] === null) {
+          updated[bName] = dPct;
+        }
+      });
+      return {
+        defaultBrandDiscounts: defaults,
+        brand_discounts: updated,
+      };
     });
   },
 
   setPaymentMode: (mode: PaymentMode) => set({ payment_mode: mode }),
 
   clearCart: (brands?: Brand[]) => {
-    const defaultBrandDiscounts: Record<string, number> = {};
+    const state = get();
+    const defaults: Record<string, number> = { ...state.defaultBrandDiscounts };
     if (brands && brands.length > 0) {
       brands.forEach((b) => {
         if (b.is_active && b.has_discount) {
-          defaultBrandDiscounts[b.name] = Number(b.discount_percent) || 0;
+          defaults[b.name] = Number(b.discount_percent) || 0;
+        } else if (b.is_active && !b.has_discount) {
+          defaults[b.name] = 0;
         }
       });
+    }
+    if (defaults['Standard'] === undefined || defaults['Standard'] === 0) {
+      defaults['Standard'] = 70;
     }
 
     set({
@@ -224,7 +268,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       customer_name: '',
       customer_phone: '',
       discount_percent: 0,
-      brand_discounts: defaultBrandDiscounts,
+      defaultBrandDiscounts: defaults,
+      brand_discounts: { ...defaults },
       payment_mode: 'cash',
       editingBillId: null,
       editingBillNo: null,

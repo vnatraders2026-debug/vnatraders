@@ -90,5 +90,29 @@ describe('Bill Total Calculations', () => {
     expect(result.brandTotals['Sony'].discount).toBe(0);
     expect(result.brandTotals['Sony'].net).toBe(200);
   });
+
+  it('matches brand discounts case-insensitively and handles whitespace', () => {
+    const items = [
+      { qty: 2, unit_price: 500, brand: 'standard' }, // lowercase
+      { qty: 1, unit_price: 1000, brand: 'Standard ' }, // trailing whitespace
+      { qty: 1, unit_price: 500, brand: 'GENERAL' },   // uppercase
+    ];
+
+    const brandDiscounts = {
+      Standard: 70,
+      general: 20,
+    };
+
+    const result = calculateBillTotals(items, 0, brandDiscounts);
+
+    // standard (1000) + Standard (1000) = 2000 * 70% = 1400 discount
+    // general (500) * 20% = 100 discount
+    // Total discount = 1500
+    // Subtotal = 2500
+    // Total = 1000
+    expect(result.subtotal).toBe(2500);
+    expect(result.discount).toBe(1500);
+    expect(result.total).toBe(1000);
+  });
 });
 

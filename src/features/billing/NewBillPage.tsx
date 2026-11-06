@@ -554,7 +554,7 @@ export const NewBillPage: React.FC = () => {
           autoPrint={shopSettings.auto_print ?? true}
           onNewBill={() => {
             setSavedReceiptData(null);
-            clearCart();
+            clearCart(dbBrands);
             searchInputRef.current?.focus();
           }}
           onEditBill={() => {
@@ -730,10 +730,23 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
   // Presets tailored to cracker industry (Standard: 70%, General: 20-30%)
   const standardPresets = [0, 50, 60, 70, 75, 80];
   const generalPresets = [0, 10, 20, 25, 30, 40];
-  const activePresets = selectedBrandTab === 'Standard' ? standardPresets : generalPresets;
+  const activePresets = selectedBrandTab.trim().toLowerCase() === 'standard' ? standardPresets : generalPresets;
 
-  const currentBrandDiscount = brand_discounts[selectedBrandTab] || 0;
-  const currentBrandData = brandTotals[selectedBrandTab];
+  // Case-insensitive discount resolver
+  const getBrandDiscountPct = (bName: string): number => {
+    const target = (bName || 'Standard').trim().toLowerCase();
+    for (const [k, v] of Object.entries(brand_discounts)) {
+      if (k.trim().toLowerCase() === target) {
+        return Math.max(0, Math.min(100, Number(v) || 0));
+      }
+    }
+    return 0;
+  };
+
+  const currentBrandDiscount = getBrandDiscountPct(selectedBrandTab);
+  const currentBrandData =
+    brandTotals[selectedBrandTab] ||
+    Object.entries(brandTotals).find(([k]) => k.trim().toLowerCase() === selectedBrandTab.trim().toLowerCase())?.[1];
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -776,7 +789,7 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
           ) : (
             items.map((item) => {
               const brandName = item.brand || 'Standard';
-              const bDiscount = brand_discounts[brandName] || 0;
+              const bDiscount = getBrandDiscountPct(brandName);
 
               return (
                 <div
@@ -942,7 +955,7 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
                 <span className="text-[11px] text-text-muted font-medium">Select Brand:</span>
                 {displayBrands.map((bName) => {
                   const bSubtotal = brandTotals[bName]?.subtotal || 0;
-                  const bPct = brand_discounts[bName] || 0;
+                  const bPct = getBrandDiscountPct(bName);
                   const isSelected = selectedBrandTab === bName;
 
                   return (

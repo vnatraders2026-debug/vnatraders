@@ -158,24 +158,32 @@ export function calculateBillTotals(
     const qty = Math.max(0, item.qty || 0);
     const price = Math.max(0, item.unit_price || 0);
     const lineTotal = Math.round(qty * price * 100) / 100;
-    const brand = (item.brand || 'Standard').trim() || 'Standard';
+    const rawBrand = (item.brand || 'Standard').trim();
+    const brand = rawBrand || 'Standard';
     brandSubtotals[brand] = (brandSubtotals[brand] || 0) + lineTotal;
   });
 
   const rawSubtotal = Object.values(brandSubtotals).reduce((sum, v) => sum + v, 0);
   const subtotal = Math.round(rawSubtotal * 100) / 100;
 
+  // Build case-insensitive lookup map for brand discounts
+  const normalizedDiscounts = new Map<string, number>();
+  if (brandDiscounts) {
+    for (const [key, val] of Object.entries(brandDiscounts)) {
+      normalizedDiscounts.set(key.trim().toLowerCase(), Math.max(0, Math.min(100, Number(val) || 0)));
+    }
+  }
+
   const hasBrandDiscounts =
-    brandDiscounts &&
-    Object.keys(brandDiscounts).length > 0 &&
-    Object.values(brandDiscounts).some((pct) => pct > 0);
+    Array.from(normalizedDiscounts.values()).some((pct) => pct > 0);
 
   const brandTotals: Record<string, BrandTotalBreakdown> = {};
   let totalDiscount = 0;
 
   if (hasBrandDiscounts) {
     Object.entries(brandSubtotals).forEach(([brand, bSub]) => {
-      const bPct = Math.max(0, Math.min(100, brandDiscounts[brand] || 0));
+      const lower = brand.trim().toLowerCase();
+      const bPct = normalizedDiscounts.has(lower) ? normalizedDiscounts.get(lower)! : 0;
       const bDisc = Math.round(((bSub * bPct) / 100) * 100) / 100;
       totalDiscount += bDisc;
       brandTotals[brand] = {

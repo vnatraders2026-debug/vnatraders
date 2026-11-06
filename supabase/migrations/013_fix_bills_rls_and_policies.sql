@@ -107,3 +107,11 @@ CREATE POLICY "Allow anon bill items all"
     TO anon
     USING (true)
     WITH CHECK (true);
+
+-- 4. Ensure public.brands has Standard set to 70% default discount
+UPDATE public.brands
+SET has_discount = true,
+    discount_percent = 70.00,
+    max_discount = 80.00
+WHERE LOWER(name) = 'standard' AND (discount_percent = 0 OR has_discount = false);
+

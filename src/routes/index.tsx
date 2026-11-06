@@ -64,6 +64,17 @@ const RequireAdmin: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   return <>{children}</>;
 };
 
+// Admin or Manager Guard (e.g. Activity Logs)
+const RequireAdminOrManager: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+
+  if (user?.role !== 'admin' && user?.role !== 'manager') {
+    return <Navigate to="/403" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 // Analytics Role Guard (Admin, Manager, Supervisor)
 const RequireAnalytics: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
@@ -141,11 +152,11 @@ export const AppRoutes: React.FC = () => {
         <Route
           path="logs"
           element={
-            <RequireAdmin>
+            <RequireAdminOrManager>
               <Suspense fallback={<LazyFallback />}>
                 <ActivityLogsPage />
               </Suspense>
-            </RequireAdmin>
+            </RequireAdminOrManager>
           }
         />
         <Route

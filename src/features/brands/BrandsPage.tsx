@@ -123,6 +123,15 @@ export const BrandsPage: React.FC = () => {
 
       allBrands = deduplicatedBrands;
 
+      // Self-healing: ensure 'Standard' has default 70% discount if unconfigured
+      const std = deduplicatedBrands.find((b) => b.name.trim().toLowerCase() === 'standard');
+      if (std && (!std.has_discount || !std.discount_percent || std.discount_percent === 0)) {
+        std.has_discount = true;
+        std.discount_percent = 70;
+        std.max_discount = std.max_discount || 80;
+        await db.brands.put(std);
+      }
+
       // 2. Auto-discover brands from existing products in catalog
       const allProducts = await db.products.toArray();
       const existingNames = new Set(allBrands.map((b) => b.name.toLowerCase().trim()));
@@ -253,29 +262,26 @@ export const BrandsPage: React.FC = () => {
   const onFormSubmit = async (data: BrandFormData) => {
     const trimmedName = data.name.trim();
 
-    // If editing and name has NOT changed, don't fail unique check against itself or duplicates!
-    if (editingBrand && editingBrand.name.toLowerCase().trim() === trimmedName.toLowerCase()) {
-      // Clean up any lingering duplicate records with this same name
-      const duplicates = await db.brands
-        .filter((b) => b.name.toLowerCase() === trimmedName.toLowerCase() && b.id !== editingBrand.id)
-        .toArray();
-      if (duplicates.length > 0) {
-        await db.brands.bulkDelete(duplicates.map((d) => d.id));
+    const currentId = editingBrand?.id;
+    // Check if another brand already uses this name
+    const conflicting = await db.brands
+      .filter((b) => b.name.trim().toLowerCase() === trimmedName.toLowerCase() && b.id !== currentId)
+      .toArray();
+
+    if (editingBrand) {
+      // If editing, merge/remove any duplicate conflicting records so the save succeeds cleanly
+      if (conflicting.length > 0) {
+        await db.brands.bulkDelete(conflicting.map((c) => c.id));
         if (navigator.onLine && isConfigured) {
           try {
-            await supabase.from('brands').delete().in('id', duplicates.map((d) => d.id));
+            await supabase.from('brands').delete().in('id', conflicting.map((c) => c.id));
           } catch (delErr) {
             console.warn('Duplicate cleanup notice:', delErr);
           }
         }
       }
     } else {
-      // Check unique name constraint for new or renamed brand
-      const existing = await db.brands
-        .filter((b) => b.name.toLowerCase() === trimmedName.toLowerCase() && b.id !== editingBrand?.id)
-        .first();
-
-      if (existing) {
+      if (conflicting.length > 0) {
         toast(`Brand "${trimmedName}" already exists`, 'error');
         return;
       }

@@ -132,10 +132,30 @@ export async function initLocalDatabase(): Promise<void> {
     await db.settings.put({ key: 'shop_settings', value: DEFAULT_SETTINGS });
   }
 
-  // Ensure default brands (Standard, General) exist
-  const brandCount = await db.brands.count();
-  if (brandCount === 0) {
+  // Ensure default brands (Standard, General) exist and Standard has its default discount
+  const existingBrands = await db.brands.toArray();
+  if (existingBrands.length === 0) {
     await db.brands.bulkPut(DEFAULT_BRANDS);
+  } else {
+    // Self-healing: Ensure 'Standard' brand has default discount configured
+    const standardBrand = existingBrands.find((b) => b.name.trim().toLowerCase() === 'standard');
+    if (!standardBrand) {
+      await db.brands.put(DEFAULT_BRANDS[0]);
+    } else if (!standardBrand.has_discount || !standardBrand.discount_percent || standardBrand.discount_percent === 0) {
+      await db.brands.update(standardBrand.id, {
+        has_discount: true,
+        discount_percent: 70,
+        max_discount: standardBrand.max_discount || 80,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    // Ensure 'General' brand exists
+    const generalBrand = existingBrands.find((b) => b.name.trim().toLowerCase() === 'general');
+    if (!generalBrand) {
+      await db.brands.put(DEFAULT_BRANDS[1]);
+    }
   }
 
   // Ensure default cracker categories exist
@@ -148,6 +168,31 @@ export async function initLocalDatabase(): Promise<void> {
       created_at: new Date().toISOString(),
     }));
     await db.categories.bulkPut(catsToInsert);
+  }
+
+  // Self-healing: ensure all existing products have a valid brand (defaulting to 'Standard')
+  try {
+    const allProds = await db.products.toArray();
+    const prodsToFix: Product[] = [];
+    const catSet = new Set(DEFAULT_CATEGORIES.map((c) => c.toLowerCase()));
+
+    for (const p of allProds) {
+      const b = (p.brand || '').trim();
+      // If brand is empty or erroneously set to a category name, default to Standard
+      if (!b || catSet.has(b.toLowerCase())) {
+        prodsToFix.push({
+          ...p,
+          brand: 'Standard',
+          updated_at: new Date().toISOString(),
+        });
+      }
+    }
+
+    if (prodsToFix.length > 0) {
+      await db.products.bulkPut(prodsToFix);
+    }
+  } catch (err) {
+    console.warn('Product brand migration notice:', err);
   }
 
   // Automatically remove any legacy pre-filled / demo products from previous sessions
