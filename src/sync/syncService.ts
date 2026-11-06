@@ -193,13 +193,15 @@ class SyncService {
 
     if (item.entity === 'bills') {
       const { items, sync_status, ...rawBill } = item.payload;
-      // Ensure created_by links to active cloud authenticated user
+      // Ensure created_by links to active cloud authenticated user or null
       let createdBy = rawBill.created_by;
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
+      if (user?.id) {
         createdBy = user.id;
-      } else if (!createdBy || createdBy.startsWith('00000000')) {
-        createdBy = 'c1e93b7c-8dad-426c-86d9-add42e0fa123';
+      } else if (createdBy && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(createdBy)) {
+        // Keep valid UUID
+      } else {
+        createdBy = null;
       }
 
       // Explicitly construct clean payload matching Supabase public.bills columns
@@ -385,41 +387,17 @@ class SyncService {
       await db.sync_meta.put({ table_name: 'products', last_synced_at: latestProdDate });
     }
 
-    // 2. Pull Bills from Cloud (reconcile deleted bills across devices)
-    const { data: serverBills, error: billErr } = await supabase
-      .from('bills')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(500);
+    // 2. Pull Bills from Cloud (safely merge into local IndexedDB without deleting local bills)
+    try {
+      const { data: serverBills, error: billErr } = await supabase
+        .from('bills')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000);
 
-    if (!billErr && serverBills !== null) {
-      const serverBillIds = new Set((serverBills || []).map((b: any) => b.id));
-
-      // Remove any local bills that were deleted on Supabase
-      const allLocalBills = await db.bills.toArray();
-      const pendingOutbox = await db.outbox
-        .where('entity')
-        .equals('bills')
-        .and((o) => o.status === 'pending' || o.status === 'syncing')
-        .toArray();
-      const pendingOutboxBillIds = new Set(pendingOutbox.map((o) => o.payload?.id));
-
-      const deletedLocalIds = allLocalBills
-        .filter((b) => !serverBillIds.has(b.id) && !pendingOutboxBillIds.has(b.id))
-        .map((b) => b.id);
-
-      if (deletedLocalIds.length > 0) {
-        await db.bills.bulkDelete(deletedLocalIds);
-        await db.bill_items.where('bill_id').anyOf(deletedLocalIds).delete();
-      }
-      if (serverBills.length === 0 && pendingOutboxBillIds.size === 0) {
-        await db.bills.clear();
-        await db.bill_items.clear();
-      }
-
-      // If server has bills, put them in local IndexedDB
-      if (serverBills && serverBills.length > 0) {
+      if (!billErr && serverBills && serverBills.length > 0) {
         const mapped = serverBills.map((b: any) => ({ ...b, sync_status: 'synced' as const }));
+        // Merge cloud bills into local Dexie database (never delete local bills)
         await db.bills.bulkPut(mapped);
 
         // Fetch items for pulled bills in batches of 30 to avoid URL length overflow
@@ -440,16 +418,16 @@ class SyncService {
           }
         }
         if (allItems.length > 0) {
-          const fetchedBillIds = Array.from(new Set(allItems.map((it) => it.bill_id)));
-          await db.bill_items.where('bill_id').anyOf(fetchedBillIds).delete();
           await db.bill_items.bulkPut(allItems);
         }
-      }
 
-      // Notify UI screens that bills have synced from cloud
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('bills-synced'));
+        // Notify UI screens that bills have synced from cloud
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('bills-synced'));
+        }
       }
+    } catch (bErr) {
+      console.warn('Bills background sync notice:', bErr);
     }
 
     // 3. Pull Profiles
@@ -537,15 +515,11 @@ class SyncService {
     this.notify();
 
     try {
-      // 1. Clear cached local products, sync metadata, bills, and bill_items
-      await db.transaction('rw', [db.products, db.sync_meta, db.bills, db.bill_items, db.categories, db.outbox], async () => {
+      // 1. Clear cached local products, sync metadata, and categories (never wipe bills!)
+      await db.transaction('rw', [db.products, db.sync_meta, db.categories, db.outbox], async () => {
         await db.products.clear();
         await db.sync_meta.clear();
-        await db.bills.clear();
-        await db.bill_items.clear();
         await db.categories.clear();
-        await db.outbox.where('entity').equals('bills').delete();
-        await db.outbox.where('entity').equals('bill_items').delete();
         await db.outbox.where('entity').equals('categories').delete();
       });
 

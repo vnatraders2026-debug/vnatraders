@@ -368,6 +368,57 @@ export async function generateNextBillNo(explicitDeviceCode?: string): Promise<s
 }
 
 /**
+ * Automatically inspects the outbox and activity logs to recover any bills
+ * that might have been lost or removed from db.bills by previous sync cycles.
+ */
+export async function restoreMissingBills(): Promise<number> {
+  let restored = 0;
+  try {
+    const existingBills = await db.bills.toArray();
+    const existingIds = new Set(existingBills.map((b) => b.id));
+    const billsToRestore: Bill[] = [];
+    const itemsToRestore: BillItem[] = [];
+
+    // 1. Recover from outbox
+    const billOutbox = await db.outbox.where('entity').equals('bills').toArray();
+    for (const item of billOutbox) {
+      const p = item.payload;
+      if (p && p.id && !existingIds.has(p.id)) {
+        const { items, ...billData } = p;
+        billsToRestore.push(billData as Bill);
+        existingIds.add(p.id);
+        restored++;
+
+        if (Array.isArray(items) && items.length > 0) {
+          itemsToRestore.push(...items);
+        }
+      }
+    }
+
+    // 2. Recover from activity_logs
+    const billLogs = await db.activity_logs.where('entity').equals('bills').toArray();
+    for (const log of billLogs) {
+      const b = (log as any).newData;
+      if (b && b.id && !existingIds.has(b.id)) {
+        billsToRestore.push(b as Bill);
+        existingIds.add(b.id);
+        restored++;
+      }
+    }
+
+    if (billsToRestore.length > 0) {
+      await db.bills.bulkPut(billsToRestore);
+    }
+    if (itemsToRestore.length > 0) {
+      await db.bill_items.bulkPut(itemsToRestore);
+    }
+  } catch (err) {
+    console.warn('Bill recovery note:', err);
+  }
+  return restored;
+}
+
+/**
  * Wipes all local bills, bill items, outbox queue, logs, and resets products & brands to pristine default state
  */
 export async function resetAllLocalData(): Promise<void> {

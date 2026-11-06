@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useCartStore } from '@/features/billing/store';
-import { db, getShopSettings } from '@/db';
+import { db, getShopSettings, restoreMissingBills } from '@/db';
 import { Bill, BillItem, Profile, ShopSettings, PaymentMode } from '@/types';
 import { formatINR, formatISTDate, consolidateBillItems } from '@/lib/format';
 import { checkBillEditPermission } from '@/lib/permissions';
@@ -15,6 +15,7 @@ import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useToast } from '@/components/ui/Toast';
 import { Search, Eye, Edit3, Printer, MessageSquare, RefreshCw } from 'lucide-react';
 import { syncService } from '@/sync/syncService';
 import { supabase, isConfigured } from '@/lib/supabase';
@@ -23,6 +24,7 @@ import { generateUUID } from '@/lib/uuid';
 export const BillsPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const [bills, setBills] = useState<Bill[]>([]);
   const [profiles, setProfiles] = useState<Map<string, Profile>>(new Map());
@@ -53,12 +55,38 @@ export const BillsPage: React.FC = () => {
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const allBills = await db.bills.orderBy('created_at').reverse().toArray();
+      // 1. Recover any bills that were stored in outbox or activity_logs
+      await restoreMissingBills();
+
+      // 2. Fetch all local bills safely
+      let allBills = await db.bills.toArray();
+      allBills.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      // 3. If online, pull from Supabase to merge any cloud bills created on other terminals
+      if (navigator.onLine && isConfigured) {
+        try {
+          const { data: serverBills, error: sbErr } = await supabase
+            .from('bills')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(500);
+
+          if (!sbErr && serverBills && serverBills.length > 0) {
+            const mapped = serverBills.map((b: any) => ({ ...b, sync_status: 'synced' as const }));
+            await db.bills.bulkPut(mapped);
+            allBills = await db.bills.toArray();
+            allBills.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+          }
+        } catch (fetchErr) {
+          console.warn('Direct cloud bills load notice:', fetchErr);
+        }
+      }
+
+      setBills(allBills);
+
       const allProfiles = await db.profiles.toArray();
       const profMap = new Map<string, Profile>();
       allProfiles.forEach((p) => profMap.set(p.id, p));
-
-      setBills(allBills);
       setProfiles(profMap);
 
       const settings = await getShopSettings();
@@ -71,10 +99,15 @@ export const BillsPage: React.FC = () => {
   const handleSyncCloud = async () => {
     setIsSyncing(true);
     try {
-      await syncService.forceFreshPullFromSupabase();
-      await loadData(true);
-    } catch (err) {
-      console.warn('Manual sync notice:', err);
+      await restoreMissingBills();
+      if (navigator.onLine && isConfigured) {
+        await syncService.processOutbox();
+        await syncService.pullUpdates();
+      }
+      await loadData(false);
+      toast('Bills synchronized successfully', 'success');
+    } catch (err: any) {
+      toast(`Sync notice: ${err?.message || 'Error syncing'}`, 'info');
     } finally {
       setIsSyncing(false);
     }
