@@ -102,13 +102,15 @@ export const NewBillPage: React.FC = () => {
   useEffect(() => {
     loadData();
 
-    // Auto-reload when cloud data is refreshed
+    // Auto-reload when cloud data is refreshed or brands are updated
     const handleRefreshed = () => {
       loadData();
     };
     window.addEventListener('supabase-data-refreshed', handleRefreshed);
+    window.addEventListener('brands-synced', handleRefreshed);
     return () => {
       window.removeEventListener('supabase-data-refreshed', handleRefreshed);
+      window.removeEventListener('brands-synced', handleRefreshed);
     };
   }, []);
 
@@ -242,9 +244,17 @@ export const NewBillPage: React.FC = () => {
           <span className="text-text-muted">•</span>
           <span className="text-text-muted font-medium">Terminal Mode: Instant Offline</span>
           {editingBillNo && (
-            <span className="font-bold text-accent px-2 py-0.5 rounded bg-accent/10">
-              Editing Bill: {editingBillNo}
-            </span>
+            <div className="flex items-center gap-1.5 font-bold text-accent px-2 py-0.5 rounded bg-accent/10">
+              <span>Editing Bill: {editingBillNo}</span>
+              <button
+                type="button"
+                onClick={() => clearCart(dbBrands)}
+                className="text-text-muted hover:text-danger ml-1 p-0.5 rounded hover:bg-surface transition-colors"
+                title="Cancel editing and start a new bill"
+              >
+                <X size={13} />
+              </button>
+            </div>
           )}
         </div>
 
@@ -727,11 +737,6 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
     }
   }, [brandsInCart, displayBrands, selectedBrandTab]);
 
-  // Presets tailored to cracker industry (Standard: 70%, General: 20-30%)
-  const standardPresets = [0, 50, 60, 70, 75, 80];
-  const generalPresets = [0, 10, 20, 25, 30, 40];
-  const activePresets = selectedBrandTab.trim().toLowerCase() === 'standard' ? standardPresets : generalPresets;
-
   // Case-insensitive discount resolver
   const getBrandDiscountPct = (bName: string): number => {
     const target = (bName || 'Standard').trim().toLowerCase();
@@ -989,81 +994,82 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
                 const currentBrandConfig = dbBrands?.find(
                   (b) => b.name.toLowerCase() === selectedBrandTab.toLowerCase()
                 );
+                const configuredDefaultDiscount = currentBrandConfig?.has_discount
+                  ? Number(currentBrandConfig.discount_percent) || 0
+                  : 0;
                 const maxAllowedDiscount =
                   currentBrandConfig?.max_discount && currentBrandConfig.max_discount > 0
                     ? currentBrandConfig.max_discount
-                    : 100;
+                    : (configuredDefaultDiscount || 100);
 
+                // If non-admin (staff, cashier, etc.), discounts are strictly fixed to brand setting
+                if (!canModifyDiscount) {
+                  return (
+                    <div className="p-2.5 rounded bg-surface border border-border space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-text">
+                          Fixed Brand Discount for <strong className="text-accent">{selectedBrandTab}</strong>:
+                        </span>
+                        <span className="text-xs font-bold font-mono text-success">
+                          {configuredDefaultDiscount > 0 ? `${configuredDefaultDiscount}% Fixed` : 'No Discount (0%)'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-border/40 text-[11px] text-text-muted">
+                        <Lock size={12} className="text-accent shrink-0" />
+                        <span>Fixed by Admin in Brand settings. Staff cannot add custom discount.</span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // If Admin, display brand default with optional custom override
                 return (
-                  <div className="p-2 rounded bg-surface border border-border space-y-1.5">
+                  <div className="p-2.5 rounded bg-surface border border-border space-y-2">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-text">
-                        Discount for <strong className="text-accent">{selectedBrandTab}</strong> items:
+                        Brand Discount for <strong className="text-accent">{selectedBrandTab}</strong>:
                       </span>
                       {currentBrandData && currentBrandDiscount > 0 && (
                         <span className="text-xs font-bold text-success font-mono">
-                          - {formatINR(currentBrandData.discount)} ({currentBrandDiscount}% off)
+                          - {formatINR(currentBrandData.discount)} ({currentBrandDiscount}% applied)
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {activePresets.map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          disabled={!canModifyDiscount}
-                          onClick={() => {
-                            if (!canModifyDiscount) return;
-                            const valid = maxAllowedDiscount > 0 ? Math.min(preset, maxAllowedDiscount) : preset;
-                            setBrandDiscount(selectedBrandTab, valid);
-                          }}
-                          className={`px-2 py-1 text-xs font-bold rounded border transition-colors min-h-[28px] ${
-                            currentBrandDiscount === preset
-                              ? 'bg-accent text-white border-accent'
-                              : 'bg-background text-text border-border hover:bg-border/40'
-                          } ${!canModifyDiscount ? 'opacity-60 cursor-not-allowed' : ''}`}
-                        >
-                          {preset}%
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40">
+                      <div className="text-[11px] text-text-muted">
+                        <span>Brand Default: <strong className="text-text">{configuredDefaultDiscount}%</strong></span>
+                        {configuredDefaultDiscount !== currentBrandDiscount && (
+                          <button
+                            type="button"
+                            onClick={() => setBrandDiscount(selectedBrandTab, configuredDefaultDiscount)}
+                            className="ml-2 text-accent font-semibold hover:underline"
+                            title="Reset to default brand discount"
+                          >
+                            Reset ({configuredDefaultDiscount}%)
+                          </button>
+                        )}
+                      </div>
 
-                      <div className="flex items-center gap-1 ml-auto">
-                        <span className="text-[11px] text-text-muted font-medium">Custom:</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[11px] text-text-muted font-medium">Custom Override:</span>
                         <input
                           type="number"
                           min="0"
-                          max={maxAllowedDiscount > 0 ? maxAllowedDiscount : 100}
-                          disabled={!canModifyDiscount}
+                          max={maxAllowedDiscount}
                           value={currentBrandDiscount || ''}
-                          placeholder="0"
+                          placeholder={String(configuredDefaultDiscount)}
                           onChange={(e) => {
-                            if (!canModifyDiscount) return;
                             const parsed = parseFloat(e.target.value) || 0;
                             const capped = maxAllowedDiscount > 0 ? Math.min(parsed, maxAllowedDiscount) : parsed;
                             setBrandDiscount(selectedBrandTab, capped);
                           }}
-                          className={`w-14 px-1.5 py-1 text-right text-xs font-bold font-mono tabular-nums bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent ${
-                            !canModifyDiscount ? 'opacity-60 cursor-not-allowed bg-surface' : ''
-                          }`}
-                          title={
-                            !canModifyDiscount
-                              ? 'Only Admin can add custom discounts'
-                              : maxAllowedDiscount > 0
-                              ? `Max allowed: ${maxAllowedDiscount}%`
-                              : undefined
-                          }
+                          className="w-16 px-1.5 py-1 text-right text-xs font-bold font-mono tabular-nums bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent"
+                          title={`Admin Override (Max allowed: ${maxAllowedDiscount}%)`}
                         />
                         <span className="text-xs text-text-muted font-bold">%</span>
                       </div>
                     </div>
-
-                    {currentBrandConfig?.has_discount && (
-                      <div className="text-[10px] text-text-muted flex justify-between pt-0.5 border-t border-border/40">
-                        <span>Admin default: <strong className="text-text">{currentBrandConfig.discount_percent}%</strong></span>
-                        <span>Max allowed: <strong className="text-text">{maxAllowedDiscount}%</strong></span>
-                      </div>
-                    )}
                   </div>
                 );
               })()}

@@ -108,5 +108,53 @@ describe('Brand Discounts and Role Permission Verification', () => {
     expect(checkBillEditPermission(oldBill, cashier).canEdit).toBe(false); // Expired
     expect(checkBillEditPermission(oldBill, staff).canEdit).toBe(false);   // Expired
   });
+
+  it('correctly loads a bill for editing and calculates discounts accurately', () => {
+    const billToEdit: Bill = {
+      id: 'bill-edit-1',
+      bill_no: '261106-A-0005',
+      subtotal: 1000,
+      discount: 700,
+      total: 300,
+      payment_mode: 'upi',
+      created_by: 'staff-1',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      brand_discounts: { Standard: 70 },
+    };
+
+    const billItems = [
+      {
+        id: 'bi-1',
+        bill_id: 'bill-edit-1',
+        product_id: 'prod-1',
+        product_name: 'Standard 28 Chorsa',
+        brand: 'Standard',
+        qty: 1,
+        unit_price: 1000,
+        line_total: 1000,
+      },
+    ];
+
+    useCartStore.getState().loadBillForEdit(billToEdit, billItems);
+    const store = useCartStore.getState();
+
+    expect(store.editingBillId).toBe('bill-edit-1');
+    expect(store.editingBillNo).toBe('261106-A-0005');
+    expect(store.payment_mode).toBe('upi');
+    expect(store.brand_discounts['Standard']).toBe(70);
+
+    const totals = store.getTotals();
+    expect(totals.subtotal).toBe(1000);
+    expect(totals.discount).toBe(700);
+    expect(totals.total).toBe(300);
+
+    // Cancel edit should clear editing state
+    useCartStore.getState().cancelEdit();
+    const cleanStore = useCartStore.getState();
+    expect(cleanStore.editingBillId).toBeNull();
+    expect(cleanStore.editingBillNo).toBeNull();
+    expect(cleanStore.items.length).toBe(0);
+  });
 });
 

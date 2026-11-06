@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { Tag, Plus, Edit2, Search, CheckCircle2, XCircle, Sparkles, Percent, RefreshCw, Trash2 } from 'lucide-react';
 import { supabase, isConfigured } from '@/lib/supabase';
+import { useCartStore } from '@/features/billing/store';
 
 const brandSchema = z.object({
   name: z.string().min(1, 'Brand name is required').trim(),
@@ -352,6 +353,14 @@ export const BrandsPage: React.FC = () => {
     }
 
     syncService.updatePendingCount();
+
+    // Immediately update cart store with the updated brand discounts
+    const freshBrands = await db.brands.toArray();
+    useCartStore.getState().initializeBrandDiscounts(freshBrands, true);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('brands-synced'));
+    }
+
     toast(editingBrand ? 'Brand updated successfully' : 'Brand created successfully', 'success');
     setIsModalOpen(false);
     loadData(false);
@@ -471,6 +480,11 @@ export const BrandsPage: React.FC = () => {
     });
 
     syncService.updatePendingCount();
+    const freshBrands = await db.brands.toArray();
+    useCartStore.getState().initializeBrandDiscounts(freshBrands, true);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('brands-synced'));
+    }
     toast(
       updatedStatus ? `Activated brand ${brand.name}` : `Deactivated brand ${brand.name}`,
       'info'

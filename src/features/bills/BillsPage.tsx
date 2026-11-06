@@ -331,8 +331,13 @@ export const BillsPage: React.FC = () => {
       });
 
       syncService.updatePendingCount();
+      if (navigator.onLine) {
+        syncService.triggerSync().catch(console.warn);
+      }
+      toast(`Payment mode for ${targetBill.bill_no} updated to ${newMode.toUpperCase()}`, 'success');
     } catch (err: any) {
       console.warn('Error updating payment mode:', err);
+      toast(`Failed to update payment mode: ${err?.message || 'Error'}`, 'error');
     }
   };
 
