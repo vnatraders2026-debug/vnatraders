@@ -156,5 +156,61 @@ describe('Brand Discounts and Role Permission Verification', () => {
     expect(cleanStore.editingBillNo).toBeNull();
     expect(cleanStore.items.length).toBe(0);
   });
+
+  it('strictly applies dynamic Admin-configured brand discounts (e.g. Standard 40% Max 50%)', () => {
+    // Admin configures Standard with 40% and Net with 15%
+    const adminConfiguredBrands: Brand[] = [
+      { id: 'b-1', name: 'Standard', has_discount: true, discount_percent: 40, max_discount: 50, is_active: true },
+      { id: 'b-2', name: 'General', has_discount: false, discount_percent: 0, max_discount: 0, is_active: true },
+      { id: 'b-3', name: 'Net', has_discount: true, discount_percent: 15, max_discount: 20, is_active: true },
+    ];
+
+    useCartStore.getState().initializeBrandDiscounts(adminConfiguredBrands, true);
+    const store = useCartStore.getState();
+
+    // Verify discounts accurately reflect Admin configuration
+    expect(store.defaultBrandDiscounts['Standard']).toBe(40);
+    expect(store.brand_discounts['Standard']).toBe(40);
+    expect(store.defaultBrandDiscounts['Net']).toBe(15);
+    expect(store.brand_discounts['Net']).toBe(15);
+    expect(store.brand_discounts['General']).toBe(0);
+
+    // Add 1 Standard item (₹1,000) and 1 Net item (₹1,000)
+    useCartStore.getState().addItem({
+      id: 'p-std',
+      code: 'ST1',
+      name: 'Standard Cracker',
+      category: 'Sound Crackers',
+      brand: 'Standard',
+      unit: 'box',
+      price: 1000,
+      stock: 10,
+      is_active: true,
+    });
+
+    useCartStore.getState().addItem({
+      id: 'p-net',
+      code: 'NET1',
+      name: 'Net Sparkler',
+      category: 'Sparklers',
+      brand: 'Net',
+      unit: 'box',
+      price: 1000,
+      stock: 10,
+      is_active: true,
+    });
+
+    const totals = useCartStore.getState().getTotals();
+    // Subtotal: 2000
+    // Standard discount: 40% of 1000 = 400
+    // Net discount: 15% of 1000 = 150
+    // Total discount: 550
+    // Net total: 1450
+    expect(totals.subtotal).toBe(2000);
+    expect(totals.discount).toBe(550);
+    expect(totals.total).toBe(1450);
+    expect(totals.brandTotals['Standard'].discount).toBe(400);
+    expect(totals.brandTotals['Net'].discount).toBe(150);
+  });
 });
 

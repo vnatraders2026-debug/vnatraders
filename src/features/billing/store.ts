@@ -88,8 +88,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   customer_name: '',
   customer_phone: '',
   discount_percent: 0,
-  defaultBrandDiscounts: { Standard: 70, General: 0 },
-  brand_discounts: { Standard: 70, General: 0 },
+  defaultBrandDiscounts: {},
+  brand_discounts: {},
   payment_mode: 'cash',
   editingBillId: null,
   editingBillNo: null,
@@ -228,20 +228,24 @@ export const useCartStore = create<CartState>((set, get) => ({
     set((state) => {
       const defaults: Record<string, number> = {};
       brands.forEach((b) => {
+        const brandName = (b.name || '').trim();
+        if (!brandName) return;
         if (b.is_active && b.has_discount) {
-          defaults[b.name] = Number(b.discount_percent) || 0;
-        } else if (b.is_active && !b.has_discount) {
-          defaults[b.name] = 0;
+          defaults[brandName] = Number(b.discount_percent) || 0;
+        } else {
+          defaults[brandName] = 0;
         }
       });
-      if (defaults['Standard'] === undefined || defaults['Standard'] === 0) {
-        defaults['Standard'] = 70;
+
+      // Ensure Standard & General exist with default 0 if unconfigured
+      if (defaults['Standard'] === undefined) {
+        defaults['Standard'] = 0;
       }
       if (defaults['General'] === undefined) {
         defaults['General'] = 0;
       }
 
-      // If force or when starting/creating a clean new bill, strictly reset brand_discounts to brand defaults
+      // If force or when starting/creating a clean new bill, strictly apply brand defaults configured by admin
       const updated = (force || !state.editingBillId)
         ? { ...defaults }
         : { ...defaults, ...state.brand_discounts };
@@ -257,18 +261,18 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   clearCart: (brands?: Brand[]) => {
     const state = get();
-    const defaults: Record<string, number> = { ...state.defaultBrandDiscounts };
+    const defaults: Record<string, number> = {};
     if (brands && brands.length > 0) {
       brands.forEach((b) => {
-        if (b.is_active && b.has_discount) {
-          defaults[b.name] = Number(b.discount_percent) || 0;
-        } else if (b.is_active && !b.has_discount) {
-          defaults[b.name] = 0;
-        }
+        const brandName = (b.name || '').trim();
+        if (!brandName) return;
+        defaults[brandName] = b.is_active && b.has_discount ? Number(b.discount_percent) || 0 : 0;
       });
+    } else {
+      Object.assign(defaults, state.defaultBrandDiscounts);
     }
-    if (defaults['Standard'] === undefined || defaults['Standard'] === 0) {
-      defaults['Standard'] = 70;
+    if (defaults['Standard'] === undefined) {
+      defaults['Standard'] = 0;
     }
     if (defaults['General'] === undefined) {
       defaults['General'] = 0;
@@ -296,8 +300,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   loadBillForEdit: (bill: Bill, billItems: BillItem[]) => {
     const state = get();
     const defaults: Record<string, number> = { ...state.defaultBrandDiscounts };
-    if (defaults['Standard'] === undefined || defaults['Standard'] === 0) {
-      defaults['Standard'] = 70;
+    if (defaults['Standard'] === undefined) {
+      defaults['Standard'] = 0;
     }
     if (defaults['General'] === undefined) {
       defaults['General'] = 0;
@@ -305,7 +309,7 @@ export const useCartStore = create<CartState>((set, get) => ({
 
     // Populate with bill's saved brand discounts if present; fallback to default brand discount
     const mergedDiscounts: Record<string, number> = { ...defaults };
-    if (bill.brand_discounts && Object.keys(bill.brand_discounts).length > 0) {
+    if (bill.brand_discounts && typeof bill.brand_discounts === 'object') {
       for (const [k, v] of Object.entries(bill.brand_discounts)) {
         if (v !== undefined && v !== null) {
           mergedDiscounts[k] = Number(v) || 0;
@@ -371,7 +375,13 @@ export const useCartStore = create<CartState>((set, get) => ({
       throw new Error('Cannot save an empty bill. Add at least one item.');
     }
 
-    const { subtotal, discount, total } = get().getTotals();
+    // For non-admin (staff, cashier, etc.), strictly enforce that brand discounts match Admin defaults
+    let effectiveBrandDiscounts = { ...brand_discounts };
+    if (currentUser.role !== 'admin') {
+      effectiveBrandDiscounts = { ...get().defaultBrandDiscounts };
+    }
+
+    const { subtotal, discount, total } = calculateBillTotals(items, 0, effectiveBrandDiscounts);
     const nowIso = new Date().toISOString();
 
     const isEditing = Boolean(editingBillId);
@@ -391,7 +401,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       created_at: isEditing && editingBillCreatedAt ? editingBillCreatedAt : nowIso,
       updated_at: nowIso,
       sync_status: 'pending',
-      brand_discounts: brand_discounts,
+      brand_discounts: effectiveBrandDiscounts,
     };
 
     if (isEditing) {

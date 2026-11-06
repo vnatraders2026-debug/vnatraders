@@ -92,7 +92,7 @@ export const NewBillPage: React.FC = () => {
 
     const brands = await db.brands.toArray();
     setDbBrands(brands);
-    useCartStore.getState().initializeBrandDiscounts(brands);
+    useCartStore.getState().initializeBrandDiscounts(brands, !useCartStore.getState().editingBillId);
 
     const settings = await getShopSettings();
     setShopSettings(settings);
@@ -720,12 +720,17 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
     return Array.from(set).sort();
   }, [items]);
 
-  // Always make both Standard and General visible for discount selection
+  // Display all brands present in cart plus all active brands configured in dbBrands
   const displayBrands = useMemo(() => {
-    const set = new Set<string>(['Standard', 'General']);
+    const set = new Set<string>();
     brandsInCart.forEach((b) => set.add(b));
+    if (dbBrands && dbBrands.length > 0) {
+      dbBrands.filter((b) => b.is_active).forEach((b) => set.add(b.name));
+    }
+    set.add('Standard');
+    set.add('General');
     return Array.from(set);
-  }, [brandsInCart]);
+  }, [brandsInCart, dbBrands]);
 
   // Selected brand for setting brand-specific discount
   const [selectedBrandTab, setSelectedBrandTab] = useState<string>('Standard');
@@ -739,13 +744,21 @@ const BillPaneContent: React.FC<BillPaneContentProps> = ({
 
   // Case-insensitive discount resolver
   const getBrandDiscountPct = (bName: string): number => {
+    // If not admin, strictly return the brand's configured default discount
+    if (!canModifyDiscount) {
+      const bConfig = dbBrands?.find(
+        (b) => b.name.trim().toLowerCase() === (bName || '').trim().toLowerCase()
+      );
+      return bConfig?.has_discount ? Number(bConfig.discount_percent) || 0 : 0;
+    }
     const target = (bName || 'Standard').trim().toLowerCase();
     for (const [k, v] of Object.entries(brand_discounts)) {
       if (k.trim().toLowerCase() === target) {
         return Math.max(0, Math.min(100, Number(v) || 0));
       }
     }
-    return 0;
+    const fallback = dbBrands?.find((b) => b.name.trim().toLowerCase() === target);
+    return fallback?.has_discount ? Number(fallback.discount_percent) || 0 : 0;
   };
 
   const currentBrandDiscount = getBrandDiscountPct(selectedBrandTab);

@@ -30,16 +30,16 @@ export const DEFAULT_SETTINGS: ShopSettings = {
 
 export const DEFAULT_BRANDS: Brand[] = [
   {
-    id: 'brand-standard',
+    id: '11111111-2222-3333-4444-555555550001',
     name: 'Standard',
-    has_discount: true,
-    discount_percent: 70,
-    max_discount: 80,
+    has_discount: false,
+    discount_percent: 0,
+    max_discount: 0,
     is_active: true,
     created_at: new Date().toISOString(),
   },
   {
-    id: 'brand-general',
+    id: '11111111-2222-3333-4444-555555550002',
     name: 'General',
     has_discount: false,
     discount_percent: 0,
@@ -137,18 +137,10 @@ export async function initLocalDatabase(): Promise<void> {
   if (existingBrands.length === 0) {
     await db.brands.bulkPut(DEFAULT_BRANDS);
   } else {
-    // Self-healing: Ensure 'Standard' brand has default discount configured
+    // Ensure 'Standard' brand exists (preserve any Admin-configured discount)
     const standardBrand = existingBrands.find((b) => b.name.trim().toLowerCase() === 'standard');
     if (!standardBrand) {
       await db.brands.put(DEFAULT_BRANDS[0]);
-    } else if (!standardBrand.has_discount || !standardBrand.discount_percent || standardBrand.discount_percent === 0) {
-      await db.brands.update(standardBrand.id, {
-        has_discount: true,
-        discount_percent: 70,
-        max_discount: standardBrand.max_discount || 80,
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      });
     }
 
     // Ensure 'General' brand exists

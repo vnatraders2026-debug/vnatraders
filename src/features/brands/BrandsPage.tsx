@@ -93,8 +93,11 @@ export const BrandsPage: React.FC = () => {
         if (list.length === 1) {
           deduplicatedBrands.push(list[0]);
         } else {
-          // Sort candidates: prefer default ID, prefer has_discount, prefer active
+          // Sort candidates: prefer newest updated_at, prefer default ID, prefer has_discount
           list.sort((a, b) => {
+            const timeA = new Date(a.updated_at || a.created_at || 0).getTime();
+            const timeB = new Date(b.updated_at || b.created_at || 0).getTime();
+            if (timeA !== timeB) return timeB - timeA;
             if (a.id.startsWith('11111111-')) return -1;
             if (b.id.startsWith('11111111-')) return 1;
             if (a.has_discount && !b.has_discount) return -1;
@@ -123,15 +126,6 @@ export const BrandsPage: React.FC = () => {
       }
 
       allBrands = deduplicatedBrands;
-
-      // Self-healing: ensure 'Standard' has default 70% discount if unconfigured
-      const std = deduplicatedBrands.find((b) => b.name.trim().toLowerCase() === 'standard');
-      if (std && (!std.has_discount || !std.discount_percent || std.discount_percent === 0)) {
-        std.has_discount = true;
-        std.discount_percent = 70;
-        std.max_discount = std.max_discount || 80;
-        await db.brands.put(std);
-      }
 
       // 2. Auto-discover brands from existing products in catalog
       const allProducts = await db.products.toArray();
@@ -262,35 +256,44 @@ export const BrandsPage: React.FC = () => {
 
   const onFormSubmit = async (data: BrandFormData) => {
     const trimmedName = data.name.trim();
-
     const currentId = editingBrand?.id;
-    // Check if another brand already uses this name
-    const conflicting = await db.brands
-      .filter((b) => b.name.trim().toLowerCase() === trimmedName.toLowerCase() && b.id !== currentId)
-      .toArray();
 
-    if (editingBrand) {
-      // If editing, merge/remove any duplicate conflicting records so the save succeeds cleanly
-      if (conflicting.length > 0) {
-        await db.brands.bulkDelete(conflicting.map((c) => c.id));
-        if (navigator.onLine && isConfigured) {
-          try {
-            await supabase.from('brands').delete().in('id', conflicting.map((c) => c.id));
-          } catch (delErr) {
-            console.warn('Duplicate cleanup notice:', delErr);
-          }
-        }
+    // Check if this is a rename to an already-existing brand
+    const isRename = editingBrand && editingBrand.name.trim().toLowerCase() !== trimmedName.toLowerCase();
+
+    if (!editingBrand) {
+      // Adding new brand: check if name already exists
+      const existing = await db.brands
+        .filter((b) => b.name.trim().toLowerCase() === trimmedName.toLowerCase())
+        .first();
+      if (existing) {
+        toast(`Brand "${trimmedName}" already exists. You can edit it from the list.`, 'error');
+        return;
       }
-    } else {
-      if (conflicting.length > 0) {
-        toast(`Brand "${trimmedName}" already exists`, 'error');
+    } else if (isRename) {
+      // Renaming brand: check if new name belongs to another brand
+      const existing = await db.brands
+        .filter((b) => b.name.trim().toLowerCase() === trimmedName.toLowerCase() && b.id !== currentId)
+        .first();
+      if (existing) {
+        toast(`Brand name "${trimmedName}" already belongs to another brand`, 'error');
         return;
       }
     }
 
-    const now = new Date().toISOString();
-    const brandId = editingBrand ? editingBrand.id : generateUUID();
+    // Ensure valid UUID for brand ID
+    let brandId = editingBrand ? editingBrand.id : generateUUID();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(brandId)) {
+      if (trimmedName.toLowerCase() === 'standard') {
+        brandId = '11111111-2222-3333-4444-555555550001';
+      } else if (trimmedName.toLowerCase() === 'general') {
+        brandId = '11111111-2222-3333-4444-555555550002';
+      } else {
+        brandId = generateUUID();
+      }
+    }
 
+    const now = new Date().toISOString();
     const brandRecord: Brand = {
       id: brandId,
       name: trimmedName,
@@ -303,6 +306,23 @@ export const BrandsPage: React.FC = () => {
       created_at: editingBrand?.created_at || now,
       updated_at: now,
     };
+
+    // Remove any conflicting duplicates with the same name (case-insensitive) but different IDs
+    const duplicateRecords = await db.brands
+      .filter((b) => b.name.trim().toLowerCase() === trimmedName.toLowerCase() && b.id !== brandId)
+      .toArray();
+
+    if (duplicateRecords.length > 0) {
+      const dupIds = duplicateRecords.map((d) => d.id);
+      await db.brands.bulkDelete(dupIds);
+      if (navigator.onLine && isConfigured) {
+        try {
+          await supabase.from('brands').delete().in('id', dupIds);
+        } catch (delErr) {
+          console.warn('Duplicate brands cloud prune notice:', delErr);
+        }
+      }
+    }
 
     const outboxItem: OutboxItem = {
       id: generateUUID(),
@@ -318,6 +338,23 @@ export const BrandsPage: React.FC = () => {
       await db.brands.put(brandRecord);
       await db.outbox.put(outboxItem);
     });
+
+    // Directly upsert to Supabase if online
+    if (navigator.onLine && isConfigured) {
+      try {
+        await supabase.from('brands').upsert({
+          id: brandRecord.id,
+          name: brandRecord.name,
+          has_discount: brandRecord.has_discount,
+          discount_percent: brandRecord.discount_percent,
+          max_discount: brandRecord.max_discount,
+          is_active: brandRecord.is_active,
+          updated_at: brandRecord.updated_at,
+        }, { onConflict: 'id' });
+      } catch (err) {
+        console.warn('Direct brand upsert to Supabase notice:', err);
+      }
+    }
 
     // If brand was renamed, update linked products to new brand name
     if (editingBrand && editingBrand.name !== trimmedName) {

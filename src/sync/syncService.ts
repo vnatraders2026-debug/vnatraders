@@ -2,6 +2,7 @@ import { db } from '@/db';
 import { supabase, isConfigured } from '@/lib/supabase';
 import { OutboxItem, Product, Brand, Category, BillItem, Profile } from '@/types';
 import { createProductSearchIndex } from '@/db/search';
+import { generateUUID } from '@/lib/uuid';
 
 export type SyncStatusState = 'online' | 'offline' | 'syncing' | 'error';
 
@@ -309,14 +310,22 @@ class SyncService {
     } else if (item.entity === 'brands') {
       const { id, name, has_discount, discount_percent, max_discount, is_active } = item.payload;
       try {
+        let validId = id;
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(validId)) {
+          const lowerName = (name || '').trim().toLowerCase();
+          if (lowerName === 'standard') validId = '11111111-2222-3333-4444-555555550001';
+          else if (lowerName === 'general') validId = '11111111-2222-3333-4444-555555550002';
+          else validId = generateUUID();
+        }
+
         if (item.op === 'delete') {
-          const { error: delErr } = await supabase.from('brands').delete().eq('id', id);
+          const { error: delErr } = await supabase.from('brands').delete().eq('id', validId);
           if (delErr) {
             console.warn('Brands cloud delete notice:', delErr.message);
           }
         } else {
           await supabase.from('brands').upsert({
-            id,
+            id: validId,
             name,
             has_discount: has_discount ?? false,
             discount_percent: discount_percent ?? 0,
