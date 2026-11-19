@@ -66,10 +66,10 @@
   }
 }
 
-/* Print Stylesheet for Thermal Receipt Paper (80mm / 58mm) and A4 */
+/* Print Stylesheet for Thermal Receipt Paper (80mm / 58mm) and A4 Standard Format */
 @media print {
   @page {
-    margin: 0;
+    margin: 6mm 8mm;
     size: auto;
   }
 
@@ -81,136 +81,120 @@
     width: 100% !important;
     height: auto !important;
     overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Completely eliminate the entire application web UI during printing */
-  #root,
+  /* Hide application navigation, header bars, action buttons and sidebars */
   header,
   nav,
   aside,
-  main,
   button,
-  .print\:hidden {
+  .no-print,
+  .print-hidden,
+  .print\:hidden,
+  [aria-label="Open menu"],
+  [aria-label="Close dialog"],
+  [aria-hidden="true"] {
     display: none !important;
     visibility: hidden !important;
   }
 
-  /* Reset modal overlays so only the receipt content remains */
-  .print-modal-overlay {
+  /* Reset fixed dialog wrappers so printable dialog content flows across full page */
+  .fixed.inset-0 {
     position: static !important;
+    display: block !important;
     background: transparent !important;
     padding: 0 !important;
     margin: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    max-width: 100% !important;
-    width: 100% !important;
     overflow: visible !important;
   }
 
-  #receipt-print-area {
+  [role="dialog"] {
+    position: static !important;
     display: block !important;
-    visibility: visible !important;
     width: 100% !important;
-    max-width: 100% !important; /* Stretch to full 80mm paper width */
-    margin: 0 !important;
-    padding: 1mm 1mm !important;
-    box-sizing: border-box !important;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Courier New", Courier, monospace !important;
-    font-size: 12px !important;
-    font-weight: 600 !important;
-    line-height: 1.35 !important;
-    border: none !important;
-    border-radius: 0 !important;
-    outline: none !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
     box-shadow: none !important;
-    background: #FFFFFF !important;
-    color: #000000 !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  /* Force all receipt text, headers, and dashed dividers to be pitch-black for thermal printer clarity */
-  #receipt-print-area,
-  #receipt-print-area * {
-    color: #000000 !important;
-    border-color: #000000 !important;
-    text-shadow: none !important;
-    filter: none !important;
-    visibility: visible !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  /* Ensure QR code and images in receipt and A4 invoice are 100% visible and un-clipped in print */
-  #receipt-print-area img,
-  #a4-invoice-print-area img {
-    display: block !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    image-rendering: auto !important;
-    max-width: 100% !important;
-  }
-
-  /* For 58mm compact thermal rolls */
-  #receipt-print-area.receipt-58mm {
-    max-width: 100% !important;
-    font-size: 10.5px !important;
-    padding: 1mm 1mm !important;
-  }
-
-  /* A4 Sheet Sales Order Invoice Print Rules */
-  body.print-a4-active {
+    border: none !important;
     padding: 0 !important;
     margin: 0 !important;
     background: #FFFFFF !important;
   }
 
+  /* Modal header inside dialogs: hide in print */
+  [role="dialog"] > div.flex.items-center.justify-between.pb-3.mb-4.border-b {
+    display: none !important;
+  }
+
+  /* Reset modal content scroll container */
+  [role="dialog"] > div.max-h-\[calc\(100dvh-12rem\)\] {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Universal Printable Area Rules */
+  .printable-area,
+  #receipt-print-area,
   #a4-invoice-print-area {
     display: block !important;
     visibility: visible !important;
     width: 100% !important;
     max-width: 100% !important;
-    margin: 0 auto !important;
+    margin: 0 !important;
     padding: 0 !important;
     box-sizing: border-box !important;
     background: #FFFFFF !important;
-    color: #0f172a !important;
+    color: #000000 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  #a4-invoice-print-area,
+  .printable-area *,
+  #receipt-print-area *,
   #a4-invoice-print-area * {
     visibility: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* Multi-page continuation rules for A4 invoice */
-  #a4-invoice-print-area table {
+  /* Table page breaks */
+  table {
     page-break-inside: auto !important;
     break-inside: auto !important;
   }
 
-  #a4-invoice-print-area thead {
+  thead {
     display: table-header-group !important;
   }
 
-  #a4-invoice-print-area tr {
+  tr {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
 
-  #a4-invoice-print-area .invoice-header-box {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+  /* Images & QR Codes in print */
+  img {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    max-width: 100% !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  #a4-invoice-print-area .invoice-footer-block {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+  /* 80mm & 58mm Thermal Print Tweaks */
+  #receipt-print-area {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Courier New", Courier, monospace !important;
+    font-size: 11.5px !important;
+    font-weight: 600 !important;
+    line-height: 1.35 !important;
+  }
+
+  #receipt-print-area.receipt-58mm {
+    font-size: 10px !important;
   }
 }

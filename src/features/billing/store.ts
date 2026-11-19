@@ -27,6 +27,7 @@ interface CartState {
   defaultBrandDiscounts: Record<string, number>;
   brand_discounts: Record<string, number>;
   payment_mode: PaymentMode;
+  pricing_type: 'retail' | 'wholesale';
   editingBillId: string | null;
   editingBillNo: string | null;
   editingBillCreatedAt: string | null;
@@ -45,6 +46,7 @@ interface CartState {
   initializeBrandDiscounts: (brands: Brand[], force?: boolean) => void;
   syncCartBrands: (products: Product[]) => void;
   setPaymentMode: (mode: PaymentMode) => void;
+  setPricingType: (type: 'retail' | 'wholesale') => void;
   clearCart: (brands?: Brand[]) => void;
   cancelEdit: (brands?: Brand[]) => void;
   loadBillForEdit: (bill: Bill, items: BillItem[]) => void;
@@ -91,6 +93,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   defaultBrandDiscounts: {},
   brand_discounts: {},
   payment_mode: 'cash',
+  pricing_type: 'retail',
   editingBillId: null,
   editingBillNo: null,
   editingBillCreatedAt: null,
@@ -99,13 +102,17 @@ export const useCartStore = create<CartState>((set, get) => ({
   addItem: (product: Product, quantity: number = 1) => {
     const brand = resolveItemBrand(product.brand, product.category);
     set((state) => {
+      const effectivePrice = state.pricing_type === 'wholesale' && product.wholesale_price && product.wholesale_price > 0
+        ? product.wholesale_price
+        : product.price;
+
       // Find existing item by product_id, code, or exact name + unit price
       const existingIndex = state.items.findIndex(
         (item) =>
           (product.id && item.product_id && item.product_id === product.id) ||
           (product.code && item.code && item.code.toUpperCase() === product.code.toUpperCase()) ||
           (item.product_name.trim().toLowerCase() === product.name.trim().toLowerCase() &&
-            Number(item.unit_price) === Number(product.price))
+            Number(item.unit_price) === Number(effectivePrice))
       );
       if (existingIndex > -1) {
         const updatedItems = [...state.items];
@@ -128,9 +135,9 @@ export const useCartStore = create<CartState>((set, get) => ({
           product_name: product.name,
           brand: brand,
           unit: product.unit || 'box',
-          unit_price: product.price,
+          unit_price: effectivePrice,
           qty: quantity,
-          line_total: Math.round(quantity * product.price * 100) / 100,
+          line_total: Math.round(quantity * effectivePrice * 100) / 100,
           stock: product.stock,
         };
         return { items: [newItem, ...state.items] };
@@ -258,6 +265,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   setPaymentMode: (mode: PaymentMode) => set({ payment_mode: mode }),
+
+  setPricingType: (type: 'retail' | 'wholesale') => set({ pricing_type: type }),
 
   clearCart: (brands?: Brand[]) => {
     const state = get();
@@ -435,8 +444,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       created_at: nowIso,
     };
 
-    // Dexie transaction: Atomic write bill + bill_items + outbox
-    await db.transaction('rw', [db.bills, db.bill_items, db.outbox, db.products], async () => {
+    // Dexie transaction: Atomic write bill + bill_items + outbox + stock deduction + movement log
+    await db.transaction('rw', [db.bills, db.bill_items, db.outbox, db.products, db.stock_movements], async () => {
       if (isEditing) {
         // 1. Restore stock for old items that were on this bill
         const oldItems = await db.bill_items.where('bill_id').equals(billId).toArray();
@@ -446,6 +455,21 @@ export const useCartStore = create<CartState>((set, get) => ({
             if (prod) {
               const restoredStock = prod.stock + (oldItem.qty || 0);
               await db.products.update(oldItem.product_id, { stock: restoredStock, updated_at: nowIso });
+              await db.stock_movements.add({
+                id: generateUUID(),
+                product_id: prod.id,
+                product_code: prod.code,
+                product_name: prod.name,
+                brand: prod.brand,
+                type: 'adjustment',
+                qty: oldItem.qty || 0,
+                prev_stock: prod.stock,
+                new_stock: restoredStock,
+                reference_no: billNo,
+                reason: `Restored stock from edited Bill ${billNo}`,
+                created_by: currentUser.full_name || currentUser.email || 'System',
+                created_at: nowIso,
+              });
             }
           }
         }
@@ -465,6 +489,24 @@ export const useCartStore = create<CartState>((set, get) => ({
             const newStock = Math.max(0, prod.stock - item.qty);
             const updatedProd: Product = { ...prod, stock: newStock, updated_at: nowIso };
             await db.products.update(item.product_id, { stock: newStock, updated_at: nowIso });
+
+            // Record movement in Stock Ledger
+            await db.stock_movements.add({
+              id: generateUUID(),
+              product_id: prod.id,
+              product_code: prod.code,
+              product_name: prod.name,
+              brand: prod.brand,
+              type: 'sale',
+              qty: -item.qty,
+              prev_stock: prod.stock,
+              new_stock: newStock,
+              reference_no: billNo,
+              reason: `Sale on Bill ${billNo}`,
+              created_by: currentUser.full_name || currentUser.email || 'Cashier',
+              created_at: nowIso,
+            });
+
             await db.outbox.put({
               id: generateUUID(),
               entity: 'products',

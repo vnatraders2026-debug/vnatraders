@@ -6,6 +6,7 @@ import { Printer, PlusCircle, Edit3, X, MessageSquare, Bluetooth, Zap, FileText,
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { directPrinterService, PrinterStatus } from '@/lib/printer/directPrinterService';
+import { printFormattedElement } from '@/lib/printer/printService';
 import { ReceiptCard } from './ReceiptCard';
 import { A4InvoiceCard } from './A4InvoiceCard';
 import { WhatsAppModal } from './WhatsAppModal';
@@ -124,8 +125,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         setIsDirectPrinting(false);
       }
     }
-    // Fallback or A4 sheet: standard browser print dialog
-    window.print();
+
+    // High quality isolated print for thermal or A4
+    const targetId = paperMode === 'a4' ? 'a4-invoice-print-area' : 'receipt-print-area';
+    const paperSize = paperMode === 'a4' ? 'a4' : (settings.paper_size === '58mm' ? '58mm' : '80mm');
+    await printFormattedElement(targetId, {
+      paperSize,
+      title: `Bill_${currentBill.bill_no}`,
+    });
   };
 
   // Automatic thermal print on save

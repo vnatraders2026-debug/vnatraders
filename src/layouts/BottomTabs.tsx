@@ -13,6 +13,15 @@ import {
   Settings,
   LogOut,
   X,
+  Warehouse,
+  Truck,
+  PackagePlus,
+  FileText,
+  Building2,
+  Tag,
+  ClipboardList,
+  ClipboardCheck,
+  Navigation,
 } from 'lucide-react';
 
 export const BottomTabs: React.FC = () => {
@@ -26,6 +35,12 @@ export const BottomTabs: React.FC = () => {
     { to: '/products', label: 'Products', icon: Boxes },
   ];
 
+  const dispatcherTabs = [
+    { to: '/dispatch', label: 'Dispatch', icon: Truck },
+    { to: '/stock', label: 'Stock', icon: Warehouse },
+    { to: '/products', label: 'Products', icon: Boxes },
+  ];
+
   const adminTabs = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/billing', label: 'New Bill', icon: FilePlus2 },
@@ -33,10 +48,19 @@ export const BottomTabs: React.FC = () => {
   ];
 
   const canAnalytics = ['admin', 'manager', 'supervisor'].includes(role);
-  const baseTabs = canAnalytics ? adminTabs : staffTabs;
+  const baseTabs = role === 'dispatcher' ? dispatcherTabs : canAnalytics ? adminTabs : staffTabs;
 
   const adminMoreItems = [
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/dispatch', label: 'Dispatch Hub', icon: Truck },
+    { to: '/stock', label: 'Stock Management', icon: Warehouse },
+    { to: '/quotations', label: 'Quotations', icon: ClipboardList },
+    { to: '/sale-orders', label: 'Sale Orders', icon: Truck },
+    { to: '/purchase-orders', label: 'Purchase Orders', icon: PackagePlus },
+    { to: '/invoices', label: 'Tax Invoices', icon: FileText },
+    { to: '/clients', label: 'Clients & Vendors', icon: Building2 },
     { to: '/products', label: 'Products', icon: Boxes },
+    { to: '/brands', label: 'Brand Discounts', icon: Tag },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
     { to: '/users', label: 'Users', icon: Users2 },
     { to: '/logs', label: 'Activity Logs', icon: ScrollText },
@@ -44,23 +68,56 @@ export const BottomTabs: React.FC = () => {
   ];
 
   const managerMoreItems = [
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/dispatch', label: 'Dispatch Hub', icon: Truck },
+    { to: '/stock', label: 'Stock Management', icon: Warehouse },
+    { to: '/quotations', label: 'Quotations', icon: ClipboardList },
+    { to: '/sale-orders', label: 'Sale Orders', icon: Truck },
+    { to: '/purchase-orders', label: 'Purchase Orders', icon: PackagePlus },
+    { to: '/invoices', label: 'Tax Invoices', icon: FileText },
+    { to: '/clients', label: 'Clients & Vendors', icon: Building2 },
     { to: '/products', label: 'Products', icon: Boxes },
+    { to: '/brands', label: 'Brand Discounts', icon: Tag },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
     { to: '/logs', label: 'Activity Logs', icon: ScrollText },
     { to: '/settings', label: 'Settings', icon: Settings },
   ];
 
   const supervisorMoreItems = [
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/dispatch', label: 'Dispatch Hub', icon: Truck },
+    { to: '/stock', label: 'Stock Management', icon: Warehouse },
+    { to: '/quotations', label: 'Quotations', icon: ClipboardList },
+    { to: '/sale-orders', label: 'Sale Orders', icon: Truck },
+    { to: '/invoices', label: 'Tax Invoices', icon: FileText },
+    { to: '/clients', label: 'Clients & Vendors', icon: Building2 },
     { to: '/products', label: 'Products', icon: Boxes },
+    { to: '/brands', label: 'Brand Discounts', icon: Tag },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
   ];
 
   const staffMoreItems = [
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/stock', label: 'Stock Management', icon: Warehouse },
+    { to: '/quotations', label: 'Quotations', icon: ClipboardList },
+    { to: '/sale-orders', label: 'Sale Orders', icon: Truck },
+    { to: '/invoices', label: 'Tax Invoices', icon: FileText },
+    { to: '/clients', label: 'Clients & Vendors', icon: Building2 },
+    { to: '/brands', label: 'Brand Discounts', icon: Tag },
     { to: '/settings', label: 'Settings', icon: Settings },
   ];
 
+  const dispatcherMoreItems = [
+    { to: '/dispatch', label: 'Dispatch Checklist', icon: ClipboardCheck },
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/stock', label: 'Stock Management', icon: Warehouse },
+    { to: '/products', label: 'Products Catalog', icon: Boxes },
+  ];
+
   const moreItems =
-    role === 'admin'
+    role === 'dispatcher'
+      ? dispatcherMoreItems
+      : role === 'admin'
       ? adminMoreItems
       : role === 'manager'
       ? managerMoreItems

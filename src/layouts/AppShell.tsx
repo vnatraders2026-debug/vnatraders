@@ -29,6 +29,12 @@ export const AppShell: React.FC = () => {
     if (pathname.startsWith('/billing')) return 'New Bill';
     if (pathname.startsWith('/bills')) return 'Bills';
     if (pathname.startsWith('/products')) return 'Products';
+    if (pathname.startsWith('/brands')) return 'Brand Discounts';
+    if (pathname.startsWith('/stock')) return 'Stock Management';
+    if (pathname.startsWith('/clients')) return 'Client Management';
+    if (pathname.startsWith('/purchase-orders')) return 'Purchase Orders';
+    if (pathname.startsWith('/sale-orders')) return 'Sale Orders & Dispatch';
+    if (pathname.startsWith('/invoices')) return 'Tax Invoices';
     if (pathname.startsWith('/reports')) return 'Reports';
     if (pathname.startsWith('/users')) return 'Users';
     if (pathname.startsWith('/logs')) return 'Activity Logs';

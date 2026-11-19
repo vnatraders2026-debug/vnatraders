@@ -6,7 +6,7 @@ import { db, initLocalDatabase } from '@/db';
 interface AuthContextType {
   user: Profile | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ error?: string }>;
+  login: (email: string, password: string) => Promise<{ error?: string; user?: Profile }>;
   logout: () => Promise<void>;
   switchDemoRole: (role: UserRole) => void;
 }
@@ -138,16 +138,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (p) =>
         (p.email && p.email.toLowerCase() === clean) ||
         (clean === 'admin' && p.role === 'admin') ||
-        (clean === 'staff' && p.role === 'staff')
+        (clean === 'staff' && p.role === 'staff') ||
+        (clean === 'dispatcher' && p.role === 'dispatcher') ||
+        (clean === 'dispatch' && p.role === 'dispatcher')
     );
   };
 
-  const login = async (email: string, password: string): Promise<{ error?: string }> => {
+  const login = async (email: string, password: string): Promise<{ error?: string; user?: Profile }> => {
     const trimmedEmail = email.trim().toLowerCase();
     const isLocalDemoAccount =
       trimmedEmail.endsWith('.local') ||
       trimmedEmail === 'admin' ||
-      trimmedEmail === 'staff';
+      trimmedEmail === 'staff' ||
+      trimmedEmail === 'dispatcher' ||
+      trimmedEmail === 'dispatch';
 
     // In offline mode, if Supabase is not configured, or if logging in with local demo credentials
     if (!isConfigured || !navigator.onLine || isLocalDemoAccount) {
@@ -158,12 +162,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         setUser(localProfile);
         localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(localProfile));
-        return {};
+        return { user: localProfile };
       }
       if (isLocalDemoAccount) {
         return {
           error:
-            'Account not found. Use "admin@crackers.local" or "staff@crackers.local" (or click the quick demo buttons below).',
+            'Account not found. Use "admin@crackers.local", "staff@crackers.local", or "dispatcher@crackers.local".',
         };
       }
     }
@@ -180,7 +184,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (localProfile && localProfile.is_active) {
           setUser(localProfile);
           localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(localProfile));
-          return {};
+          return { user: localProfile };
         }
         return { error: authError?.message || 'Invalid email or password' };
       }
@@ -214,7 +218,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(activeProfile));
       await db.profiles.put(activeProfile);
 
-      return {};
+      return { user: activeProfile };
     } catch (err: any) {
       return { error: err?.message || 'Login failed. Please check network connection.' };
     }

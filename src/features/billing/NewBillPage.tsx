@@ -39,6 +39,8 @@ export const NewBillPage: React.FC = () => {
     customer_phone,
     brand_discounts,
     payment_mode,
+    pricing_type,
+    setPricingType,
     editingBillNo,
     addItem,
     updateQty,
@@ -259,6 +261,34 @@ export const NewBillPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 text-text-muted font-mono text-[11px]">
+          {/* Retail vs Wholesale Pricing Switch */}
+          <div className="flex items-center bg-background border border-border rounded p-0.5 font-sans">
+            <button
+              type="button"
+              onClick={() => setPricingType('retail')}
+              className={`px-2.5 py-1 text-xs font-bold rounded transition-colors ${
+                pricing_type === 'retail'
+                  ? 'bg-accent text-white shadow-xs'
+                  : 'text-text-muted hover:text-text'
+              }`}
+              title="Retail pricing with brand discounts"
+            >
+              Retail Rate
+            </button>
+            <button
+              type="button"
+              onClick={() => setPricingType('wholesale')}
+              className={`px-2.5 py-1 text-xs font-bold rounded transition-colors ${
+                pricing_type === 'wholesale'
+                  ? 'bg-accent text-white shadow-xs'
+                  : 'text-text-muted hover:text-text'
+              }`}
+              title="Wholesale net dealer pricing"
+            >
+              Wholesale Rate
+            </button>
+          </div>
+
           <div className="hidden sm:flex items-center gap-2">
             <span><kbd className="px-1.5 py-0.5 bg-surface border border-border rounded text-text">/</kbd> Search</span>
             <span><kbd className="px-1.5 py-0.5 bg-surface border border-border rounded text-text">Enter</kbd> Add</span>
@@ -410,9 +440,18 @@ export const NewBillPage: React.FC = () => {
                       <div className="flex items-center gap-3 shrink-0">
                         <div className="text-right">
                           <span className="text-sm font-bold tabular-nums text-text">
-                            {formatINR(prod.price)}
+                            {formatINR(
+                              pricing_type === 'wholesale' && prod.wholesale_price && prod.wholesale_price > 0
+                                ? prod.wholesale_price
+                                : prod.price
+                            )}
                           </span>
-                          <p className="text-[10px] text-text-muted">per {prod.unit}</p>
+                          <p className="text-[10px] text-text-muted">
+                            {pricing_type === 'wholesale' && prod.wholesale_price && prod.wholesale_price > 0
+                              ? 'Wholesale'
+                              : 'Retail'}{' '}
+                            / {prod.unit}
+                          </p>
                         </div>
 
                         {/* Add Action Button */}

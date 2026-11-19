@@ -6,7 +6,7 @@ export interface DialogProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | 'full';
 }
 
 export const Dialog: React.FC<DialogProps> = ({
@@ -31,15 +31,21 @@ export const Dialog: React.FC<DialogProps> = ({
   const maxWidthClasses = {
     sm: 'max-w-sm',
     md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-2xl',
+    lg: 'max-w-2xl',
+    xl: 'max-w-5xl',
+    '2xl': 'max-w-6xl',
+    '3xl': 'max-w-7xl',
+    '4xl': 'max-w-7xl',
+    '5xl': 'max-w-5xl',
+    '6xl': 'max-w-6xl',
+    full: 'max-w-[96vw] w-full',
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/40 transition-opacity duration-150"
+        className="fixed inset-0 bg-black/50 transition-opacity duration-150"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -48,19 +54,19 @@ export const Dialog: React.FC<DialogProps> = ({
       <div
         role="dialog"
         aria-modal="true"
-        className={`relative w-full ${maxWidthClasses[maxWidth]} bg-surface border border-border rounded shadow-subtle p-6 z-10 transition-transform duration-150 motion-reduce:transition-none`}
+        className={`relative w-full ${maxWidthClasses[maxWidth] || 'max-w-5xl'} bg-surface border border-border rounded-lg shadow-xl p-4 sm:p-6 z-10 transition-transform duration-150 motion-reduce:transition-none`}
       >
         <div className="flex items-center justify-between pb-3 mb-4 border-b border-border">
-          <h2 className="text-lg font-semibold text-text">{title}</h2>
+          <h2 className="text-lg font-bold text-text">{title}</h2>
           <button
             onClick={onClose}
-            className="p-1.5 text-text-muted hover:text-text rounded hover:bg-background focus:outline-none focus:ring-2 focus:ring-accent"
+            className="p-1.5 text-text-muted hover:text-text rounded-md hover:bg-background focus:outline-none focus:ring-2 focus:ring-accent"
             aria-label="Close dialog"
           >
             <X size={18} />
           </button>
         </div>
-        <div className="max-h-[calc(100dvh-12rem)] overflow-y-auto">
+        <div className="max-h-[calc(100dvh-7rem)] overflow-y-auto pr-1">
           {children}
         </div>
       </div>

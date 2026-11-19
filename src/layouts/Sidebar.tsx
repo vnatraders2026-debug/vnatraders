@@ -12,6 +12,14 @@ import {
   ScrollText,
   Settings,
   LogOut,
+  Warehouse,
+  Truck,
+  PackagePlus,
+  FileText,
+  Building2,
+  ClipboardList,
+  ClipboardCheck,
+  Navigation,
 } from 'lucide-react';
 
 import { VnaLogo } from '@/components/VnaLogo';
@@ -29,22 +37,47 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent
   const staffNavItems = [
     { to: '/billing', label: 'New Bill', icon: FilePlus2 },
     { to: '/bills', label: 'Bills', icon: Receipt },
+    { to: '/quotations', label: 'Quotations', icon: ClipboardList },
+    { to: '/sale-orders', label: 'Sale Orders', icon: Truck },
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/invoices', label: 'Invoices', icon: FileText },
+    { to: '/stock', label: 'Stock', icon: Warehouse },
     { to: '/products', label: 'Products', icon: Boxes },
     { to: '/brands', label: 'Brands', icon: Tag },
+    { to: '/clients', label: 'Clients', icon: Building2 },
   ];
 
   const cashierNavItems = [
     { to: '/billing', label: 'New Bill', icon: FilePlus2 },
     { to: '/bills', label: 'Bills', icon: Receipt },
+    { to: '/quotations', label: 'Quotations', icon: ClipboardList },
+    { to: '/sale-orders', label: 'Sale Orders', icon: Truck },
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/invoices', label: 'Invoices', icon: FileText },
+    { to: '/stock', label: 'Stock', icon: Warehouse },
     { to: '/products', label: 'Products', icon: Boxes },
+  ];
+
+  const dispatcherNavItems = [
+    { to: '/dispatch', label: 'Dispatch Hub', icon: ClipboardCheck },
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/stock', label: 'Stock Lookup', icon: Warehouse },
+    { to: '/products', label: 'Products Master', icon: Boxes },
   ];
 
   const supervisorNavItems = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/billing', label: 'New Bill', icon: FilePlus2 },
     { to: '/bills', label: 'Bills', icon: Receipt },
+    { to: '/quotations', label: 'Quotations', icon: ClipboardList },
+    { to: '/sale-orders', label: 'Sale Orders', icon: Truck },
+    { to: '/dispatch', label: 'Dispatch Hub', icon: ClipboardCheck },
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/invoices', label: 'Invoices', icon: FileText },
+    { to: '/stock', label: 'Stock', icon: Warehouse },
     { to: '/products', label: 'Products', icon: Boxes },
     { to: '/brands', label: 'Brands', icon: Tag },
+    { to: '/clients', label: 'Clients', icon: Building2 },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
   ];
 
@@ -52,8 +85,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/billing', label: 'New Bill', icon: FilePlus2 },
     { to: '/bills', label: 'Bills', icon: Receipt },
+    { to: '/quotations', label: 'Quotations', icon: ClipboardList },
+    { to: '/sale-orders', label: 'Sale Orders', icon: Truck },
+    { to: '/dispatch', label: 'Dispatch Hub', icon: ClipboardCheck },
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/invoices', label: 'Invoices', icon: FileText },
+    { to: '/stock', label: 'Stock', icon: Warehouse },
+    { to: '/purchase-orders', label: 'Purchase Orders', icon: PackagePlus },
     { to: '/products', label: 'Products', icon: Boxes },
     { to: '/brands', label: 'Brands', icon: Tag },
+    { to: '/clients', label: 'Clients', icon: Building2 },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
     { to: '/logs', label: 'Activity Logs', icon: ScrollText },
   ];
@@ -62,8 +103,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/billing', label: 'New Bill', icon: FilePlus2 },
     { to: '/bills', label: 'Bills', icon: Receipt },
+    { to: '/quotations', label: 'Quotations', icon: ClipboardList },
+    { to: '/sale-orders', label: 'Sale Orders', icon: Truck },
+    { to: '/dispatch', label: 'Dispatch Hub', icon: ClipboardCheck },
+    { to: '/transport', label: 'Transportation', icon: Navigation },
+    { to: '/invoices', label: 'Invoices', icon: FileText },
+    { to: '/stock', label: 'Stock', icon: Warehouse },
+    { to: '/purchase-orders', label: 'Purchase Orders', icon: PackagePlus },
     { to: '/products', label: 'Products', icon: Boxes },
     { to: '/brands', label: 'Brands', icon: Tag },
+    { to: '/clients', label: 'Clients', icon: Building2 },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
     { to: '/users', label: 'Users', icon: Users2 },
     { to: '/logs', label: 'Activity Logs', icon: ScrollText },
@@ -72,6 +121,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent
 
   const getNavItems = () => {
     switch (role) {
+      case 'dispatcher':
+        return dispatcherNavItems;
       case 'admin':
         return adminNavItems;
       case 'manager':

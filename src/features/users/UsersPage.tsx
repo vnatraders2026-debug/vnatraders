@@ -379,6 +379,8 @@ export const UsersPage: React.FC = () => {
                           ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
                           : p.role === 'cashier'
                           ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          : p.role === 'dispatcher'
+                          ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border border-orange-200 dark:border-orange-800 font-extrabold'
                           : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                       }`}
                     >
@@ -508,6 +510,7 @@ export const UsersPage: React.FC = () => {
             <option value="manager">Manager (Bills Edit, Analytics & Reports)</option>
             <option value="supervisor">Supervisor (Bills Edit & Analytics)</option>
             <option value="cashier">Cashier (Billing & Receipts)</option>
+            <option value="dispatcher">Dispatcher (Item Checklist & Delivery Challan)</option>
             <option value="staff">Staff (Standard Billing & Products)</option>
           </Select>
 
@@ -559,6 +562,7 @@ export const UsersPage: React.FC = () => {
               <option value="manager">Manager (Bills Edit, Analytics & Reports)</option>
               <option value="supervisor">Supervisor (Bills Edit & Analytics)</option>
               <option value="cashier">Cashier (Billing & Receipts)</option>
+              <option value="dispatcher">Dispatcher (Item Checklist & Delivery Challan)</option>
               <option value="staff">Staff (Standard Billing & Products)</option>
             </Select>
             {editingUser.id === currentUser?.id && (
@@ -628,6 +632,7 @@ export const UsersPage: React.FC = () => {
               <option value="manager">Manager</option>
               <option value="supervisor">Supervisor</option>
               <option value="cashier">Cashier</option>
+              <option value="dispatcher">Dispatcher</option>
               <option value="staff">Staff</option>
             </Select>
             <div className="flex justify-end gap-2 pt-2 border-t border-border">

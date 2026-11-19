@@ -3,6 +3,17 @@ import {
   Product,
   Brand,
   Category,
+  Client,
+  StockMovement,
+  PurchaseOrder,
+  PurchaseOrderItem,
+  SaleOrder,
+  SaleOrderItem,
+  Invoice,
+  InvoiceItem,
+  Quotation,
+  QuotationItem,
+  TransportEntry,
   Bill,
   BillItem,
   OutboxItem,
@@ -12,7 +23,16 @@ import {
   ActivityLog,
   DeviceSequence,
 } from '@/types';
-import { getISTYYMMDD, formatBillNo, consolidateBillItems, calculateBillTotals } from '@/lib/format';
+import {
+  getISTYYMMDD,
+  formatBillNo,
+  formatPoNo,
+  formatSoNo,
+  formatInvoiceNo,
+  formatQuotationNo,
+  consolidateBillItems,
+  calculateBillTotals,
+} from '@/lib/format';
 import { generateUUID } from '@/lib/uuid';
 import { supabase, isConfigured } from '@/lib/supabase';
 
@@ -82,6 +102,17 @@ export class CrackersBillingDB extends Dexie {
   device_sequence!: Table<DeviceSequence, string>;
   profiles!: Table<Profile, string>;
   activity_logs!: Table<ActivityLog, number>;
+  clients!: Table<Client, string>;
+  stock_movements!: Table<StockMovement, string>;
+  purchase_orders!: Table<PurchaseOrder, string>;
+  purchase_order_items!: Table<PurchaseOrderItem, string>;
+  sale_orders!: Table<SaleOrder, string>;
+  sale_order_items!: Table<SaleOrderItem, string>;
+  invoices!: Table<Invoice, string>;
+  invoice_items!: Table<InvoiceItem, string>;
+  quotations!: Table<Quotation, string>;
+  quotation_items!: Table<QuotationItem, string>;
+  transport_entries!: Table<TransportEntry, string>;
 
   constructor() {
     super('CrackersBillingDB');
@@ -109,6 +140,26 @@ export class CrackersBillingDB extends Dexie {
 
     this.version(4).stores({
       categories: 'id, name, is_active, created_at',
+    });
+
+    this.version(5).stores({
+      clients: 'id, name, type, phone, gstin, is_active, updated_at',
+      stock_movements: 'id, product_id, product_code, type, created_at',
+      purchase_orders: 'id, po_no, supplier_id, status, order_date, created_at',
+      purchase_order_items: 'id, po_id, product_id',
+      sale_orders: 'id, so_no, client_id, status, order_date, delivery_due_date, created_at',
+      sale_order_items: 'id, so_id, product_id',
+      invoices: 'id, invoice_no, client_id, so_id, payment_status, invoice_date, created_at',
+      invoice_items: 'id, invoice_id, product_id',
+    });
+
+    this.version(6).stores({
+      quotations: 'id, quotation_no, client_id, status, quotation_date, valid_until, created_at',
+      quotation_items: 'id, quotation_id, product_id',
+    });
+
+    this.version(7).stores({
+      transport_entries: 'id, lr_no, transport_name, status, dispatch_date, destination, so_id, client_id, created_at',
     });
   }
 }
@@ -162,6 +213,89 @@ export async function initLocalDatabase(): Promise<void> {
     await db.categories.bulkPut(catsToInsert);
   }
 
+  // Ensure default clients exist for VNA Traders (Wholesale Dealer, Retail Buyer, Sivakasi Factory)
+  const clientCount = await db.clients.count();
+  if (clientCount === 0) {
+    const now = new Date().toISOString();
+    await db.clients.bulkPut([
+      {
+        id: 'a1111111-1111-1111-1111-111111111001',
+        name: 'Rajesh Kumar',
+        company_name: 'Sri Venkateshwara Crackers Wholesale',
+        type: 'customer',
+        customer_tier: 'wholesale',
+        phone: '9842154321',
+        email: 'venkateshwaracrackers@gmail.com',
+        gstin: '29AAACV1234F1Z2',
+        address: 'Shop No. 4, APMC Yard, Yeshwanthpur',
+        city: 'Bengaluru',
+        state: 'Karnataka',
+        pincode: '560022',
+        credit_limit: 500000,
+        outstanding_balance: 145000,
+        is_active: true,
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 'a1111111-1111-1111-1111-111111111002',
+        name: 'Murugan M.',
+        company_name: 'Murugan Agencies',
+        type: 'customer',
+        customer_tier: 'retail',
+        phone: '9443198765',
+        email: 'murugan.hosur@gmail.com',
+        gstin: '33AALCM9876D1Z1',
+        address: '12, Bagalur Road, Near Bus Stand',
+        city: 'Hosur',
+        state: 'Tamil Nadu',
+        pincode: '635109',
+        credit_limit: 100000,
+        outstanding_balance: 0,
+        is_active: true,
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 'a1111111-1111-1111-1111-111111111003',
+        name: 'K. Senthil Nathan',
+        company_name: 'Standard Fireworks Industries Ltd',
+        type: 'supplier',
+        customer_tier: 'wholesale',
+        phone: '9442111222',
+        email: 'orders@standardfireworks.com',
+        gstin: '33AAACS5555M1Z8',
+        address: '1/28, Sivakasi Main Road, Thiruthangal',
+        city: 'Sivakasi',
+        state: 'Tamil Nadu',
+        pincode: '626123',
+        credit_limit: 2000000,
+        outstanding_balance: 0,
+        is_active: true,
+        created_at: now,
+        updated_at: now,
+      },
+    ]);
+  }
+
+  // Ensure default dispatcher profile exists for warehouse dispatch testing
+  try {
+    const allProfs = await db.profiles.toArray();
+    const hasDispatcher = allProfs.some((p) => p.role === 'dispatcher');
+    if (!hasDispatcher) {
+      await db.profiles.put({
+        id: 'd1111111-1111-1111-1111-111111111001',
+        full_name: 'Ramu (Dispatch In-Charge)',
+        email: 'dispatcher@crackers.local',
+        role: 'dispatcher',
+        is_active: true,
+        created_at: new Date().toISOString(),
+      });
+    }
+  } catch (profErr) {
+    console.warn('Dispatcher profile setup notice:', profErr);
+  }
+
   // Self-healing: ensure all existing products have a valid brand (defaulting to 'Standard')
   try {
     const allProds = await db.products.toArray();
@@ -197,6 +331,190 @@ export async function initLocalDatabase(): Promise<void> {
 
   // Self-healing: consolidate any duplicated bill items in Dexie
   await cleanupDuplicateBillItemsInDb();
+
+  // Ensure default transportation history exists if empty
+  try {
+    const transportCount = await db.transport_entries.count();
+    if (transportCount === 0) {
+      const existingSos = await db.sale_orders.toArray();
+      const initialTransports: TransportEntry[] = [];
+
+      for (const so of existingSos) {
+        if (so.lr_number || so.transport_name || so.status === 'dispatched' || so.status === 'delivered') {
+          const items = await db.sale_order_items.where('so_id').equals(so.id).toArray();
+          const totalBoxes = items.reduce((sum, it) => sum + (it.qty || 0), 0) || 20;
+          initialTransports.push({
+            id: generateUUID(),
+            lr_no: so.lr_number || `VRL-${so.so_no.slice(-4)}`,
+            transport_name: so.transport_name || 'VRL Logistics',
+            vehicle_no: so.vehicle_number || 'TN 70 AB 1234',
+            driver_name: 'Murugan (Lorry Driver)',
+            driver_phone: so.driver_phone || '94431 23456',
+            dispatch_date: so.dispatched_at ? so.dispatched_at.slice(0, 10) : so.order_date,
+            estimated_delivery_date: so.delivery_due_date,
+            actual_delivery_date: so.status === 'delivered' ? so.delivered_at || so.delivery_due_date : undefined,
+            destination: so.destination || 'Bengaluru APMC',
+            source_location: 'Hosur Godown (Jeermangalam)',
+            so_id: so.id,
+            so_no: so.so_no,
+            client_id: so.client_id,
+            consignee_name: so.customer_name,
+            consignee_phone: so.customer_phone,
+            consignee_address: so.customer_address,
+            consignee_gstin: so.customer_gstin,
+            total_boxes: totalBoxes,
+            total_weight_kg: Math.round(totalBoxes * 8.5),
+            consignment_value: so.total_amount,
+            items_summary: items.map((i) => `${i.product_name} (${i.qty})`).slice(0, 3).join(', '),
+            freight_type: 'to_pay',
+            freight_amount: Math.round(totalBoxes * 65),
+            loading_charges: Math.round(totalBoxes * 10),
+            total_charges: Math.round(totalBoxes * 75),
+            status: so.status === 'delivered' ? 'delivered' : 'in_transit',
+            delivery_remarks: so.status === 'delivered' ? 'Consignment received in good condition' : undefined,
+            dispatched_by: so.dispatched_by || 'Ramu (Dispatch In-Charge)',
+            created_by: so.created_by,
+            created_at: so.created_at,
+            updated_at: so.updated_at,
+          });
+        }
+      }
+
+      if (initialTransports.length === 0) {
+        const d1 = new Date(Date.now() - 86400000 * 3).toISOString();
+        const d2 = new Date(Date.now() - 86400000 * 2).toISOString();
+        const d3 = new Date(Date.now() - 86400000).toISOString();
+        const d4 = new Date().toISOString();
+
+        initialTransports.push(
+          {
+            id: generateUUID(),
+            lr_no: 'VRL-89421',
+            transport_name: 'VRL Logistics',
+            vehicle_no: 'KA 01 AJ 5542',
+            driver_name: 'K. Senthil',
+            driver_phone: '98421 88765',
+            dispatch_date: d1.slice(0, 10),
+            estimated_delivery_date: d2.slice(0, 10),
+            actual_delivery_date: d2.slice(0, 10),
+            destination: 'Bengaluru (Yeshwanthpur APMC)',
+            source_location: 'Hosur Central Godown',
+            consignee_name: 'Sri Venkateshwara Crackers Wholesale',
+            consignee_phone: '98421 54321',
+            consignee_address: 'Shop 4, APMC Yard, Yeshwanthpur, Bengaluru',
+            consignee_gstin: '29AAACV1234F1Z2',
+            total_boxes: 85,
+            total_weight_kg: 720,
+            consignment_value: 145000,
+            items_summary: 'Deluxe Sparklers, Flower Pots, Ground Chakkars',
+            freight_type: 'to_pay',
+            freight_amount: 5500,
+            loading_charges: 850,
+            total_charges: 6350,
+            status: 'delivered',
+            delivery_remarks: 'Delivered at APMC Godown No. 4, signed by Rajesh Kumar',
+            dispatched_by: 'Ramu (Dispatch In-Charge)',
+            created_by: 'Manager',
+            created_at: d1,
+            updated_at: d2,
+          },
+          {
+            id: generateUUID(),
+            lr_no: 'ARC-49210',
+            transport_name: 'ARC (Associated Road Carriers)',
+            vehicle_no: 'TN 28 AK 9912',
+            driver_name: 'R. Velu',
+            driver_phone: '94432 11234',
+            dispatch_date: d2.slice(0, 10),
+            estimated_delivery_date: d3.slice(0, 10),
+            actual_delivery_date: d3.slice(0, 10),
+            destination: 'Coimbatore (Cross Cut Road)',
+            source_location: 'Jeermangalam Hub',
+            consignee_name: 'Kovai Cracker Palace',
+            consignee_phone: '94435 66789',
+            consignee_address: '142 Cross Cut Road, Gandhipuram, Coimbatore',
+            consignee_gstin: '33AAACK4455B1Z9',
+            total_boxes: 120,
+            total_weight_kg: 1050,
+            consignment_value: 230000,
+            items_summary: 'Fancy Sky Blitz, 50 Shots Cakes, Multi Color Pots',
+            freight_type: 'paid',
+            freight_amount: 8200,
+            loading_charges: 1200,
+            total_charges: 9400,
+            status: 'delivered',
+            delivery_remarks: 'Lorry arrived safely at Coimbatore booking office',
+            dispatched_by: 'Ramu (Dispatch In-Charge)',
+            created_by: 'Staff',
+            created_at: d2,
+            updated_at: d3,
+          },
+          {
+            id: generateUUID(),
+            lr_no: 'SRS-33912',
+            transport_name: 'SRS Logistics',
+            vehicle_no: 'KA 05 D 7719',
+            driver_name: 'M. Anand',
+            driver_phone: '99001 54321',
+            dispatch_date: d3.slice(0, 10),
+            estimated_delivery_date: d4.slice(0, 10),
+            destination: 'Salem (Seelanaickenpatti)',
+            source_location: 'Jeermangalam Hub',
+            consignee_name: 'Murugan Agencies',
+            consignee_phone: '94431 98765',
+            consignee_address: '12-A Bazaar Street, Shevapet, Salem',
+            consignee_gstin: '33AABCM9988E1Z1',
+            total_boxes: 70,
+            total_weight_kg: 610,
+            consignment_value: 115000,
+            items_summary: '28 Chorsa, Bijili Crackers, Flower Pots Special',
+            freight_type: 'to_pay',
+            freight_amount: 4500,
+            loading_charges: 700,
+            total_charges: 5200,
+            status: 'in_transit',
+            dispatched_by: 'Ramu (Dispatch In-Charge)',
+            created_by: 'Staff',
+            created_at: d3,
+            updated_at: d3,
+          },
+          {
+            id: generateUUID(),
+            lr_no: 'ABT-77142',
+            transport_name: 'ABT Parcel Service',
+            vehicle_no: 'TN 70 M 3410',
+            driver_name: 'G. Kannan',
+            driver_phone: '97890 22345',
+            dispatch_date: d4.slice(0, 10),
+            estimated_delivery_date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+            destination: 'Chennai (Koyambedu Wholesale Market)',
+            source_location: 'Hosur Central Godown',
+            consignee_name: 'Chennai Diwali Bazaars Ltd',
+            consignee_phone: '98410 44556',
+            consignee_address: 'B-Block Wholesale Complex, Koyambedu, Chennai',
+            consignee_gstin: '33AABCC7788D1Z4',
+            total_boxes: 95,
+            total_weight_kg: 840,
+            consignment_value: 185000,
+            items_summary: 'Bijili Crackers, 1000 Wala, Fancy Sky Blitz',
+            freight_type: 'to_pay',
+            freight_amount: 6800,
+            loading_charges: 950,
+            total_charges: 7750,
+            status: 'in_transit',
+            dispatched_by: 'Ramu (Dispatch In-Charge)',
+            created_by: 'Admin',
+            created_at: d4,
+            updated_at: d4,
+          }
+        );
+      }
+
+      await db.transport_entries.bulkPut(initialTransports);
+    }
+  } catch (transErr) {
+    console.warn('Transport entries initialization notice:', transErr);
+  }
 }
 
 /**
@@ -504,4 +822,184 @@ export async function resetAllLocalData(): Promise<void> {
 // Make accessible on window object for convenience
 if (typeof window !== 'undefined') {
   (window as any).resetAllLocalData = resetAllLocalData;
+}
+
+/**
+ * Record a stock movement in inventory ledger
+ */
+export async function recordStockMovement(
+  movement: Omit<StockMovement, 'id' | 'created_at'>
+): Promise<StockMovement> {
+  const item: StockMovement = {
+    id: generateUUID(),
+    created_at: new Date().toISOString(),
+    ...movement,
+  };
+  await db.stock_movements.add(item);
+  return item;
+}
+
+/**
+ * Adjust product stock to a specified quantity with audit trail
+ */
+export async function adjustProductStock(
+  productId: string,
+  newStock: number,
+  reason: string = 'Inventory audit / manual adjustment',
+  user: string = 'Admin'
+): Promise<Product | null> {
+  const prod = await db.products.get(productId);
+  if (!prod) return null;
+
+  const validStock = Math.max(0, Math.round(newStock));
+  const prevStock = prod.stock || 0;
+  const delta = validStock - prevStock;
+  const now = new Date().toISOString();
+
+  await db.transaction('rw', [db.products, db.stock_movements, db.outbox], async () => {
+    await db.products.update(productId, {
+      stock: validStock,
+      updated_at: now,
+    });
+
+    await db.stock_movements.add({
+      id: generateUUID(),
+      product_id: prod.id,
+      product_code: prod.code,
+      product_name: prod.name,
+      brand: prod.brand,
+      type: delta >= 0 ? 'adjustment' : 'damage',
+      qty: delta,
+      prev_stock: prevStock,
+      new_stock: validStock,
+      reference_no: 'AUDIT',
+      reason: reason,
+      created_by: user,
+      created_at: now,
+    });
+
+    await db.outbox.add({
+      id: generateUUID(),
+      entity: 'products',
+      op: 'update',
+      payload: { ...prod, stock: validStock, updated_at: now },
+      status: 'pending',
+      attempts: 0,
+      created_at: now,
+    });
+  });
+
+  return { ...prod, stock: validStock, updated_at: now };
+}
+
+/**
+ * Apply stock increase or decrease (e.g. from Sales, PO receiving, Returns)
+ */
+export async function applyStockChange(
+  productId: string,
+  deltaQty: number, // positive for addition, negative for deduction
+  type: StockMovement['type'],
+  referenceNo: string = '',
+  reason: string = '',
+  user: string = 'System'
+): Promise<number> {
+  const prod = await db.products.get(productId);
+  if (!prod) return 0;
+
+  const prevStock = prod.stock || 0;
+  const newStock = Math.max(0, prevStock + deltaQty);
+  const now = new Date().toISOString();
+
+  await db.transaction('rw', [db.products, db.stock_movements, db.outbox], async () => {
+    await db.products.update(productId, {
+      stock: newStock,
+      updated_at: now,
+    });
+
+    const mvRecord: StockMovement = {
+      id: generateUUID(),
+      product_id: prod.id,
+      product_code: prod.code,
+      product_name: prod.name,
+      brand: prod.brand,
+      type: type,
+      qty: deltaQty,
+      prev_stock: prevStock,
+      new_stock: newStock,
+      reference_no: referenceNo,
+      reason: reason || `${type} operation`,
+      created_by: user,
+      created_at: now,
+    };
+
+    await db.stock_movements.add(mvRecord);
+
+    await db.outbox.add({
+      id: generateUUID(),
+      entity: 'stock_movements',
+      op: 'insert',
+      payload: mvRecord,
+      status: 'pending',
+      attempts: 0,
+      created_at: now,
+    });
+
+    await db.outbox.add({
+      id: generateUUID(),
+      entity: 'products',
+      op: 'update',
+      payload: { ...prod, stock: newStock, updated_at: now },
+      status: 'pending',
+      attempts: 0,
+      created_at: now,
+    });
+  });
+
+  return newStock;
+}
+
+/**
+ * Generates next sequential Purchase Order Number (e.g. PO-261116-0001)
+ */
+export async function generateNextPoNo(): Promise<string> {
+  const dateStr = getISTYYMMDD();
+  const count = await db.purchase_orders.count();
+  return formatPoNo(dateStr, count + 1);
+}
+
+/**
+ * Generates next sequential Sale Order Number (e.g. SO-261116-0001)
+ */
+export async function generateNextSoNo(): Promise<string> {
+  const dateStr = getISTYYMMDD();
+  const count = await db.sale_orders.count();
+  return formatSoNo(dateStr, count + 1);
+}
+
+/**
+ * Generates next sequential Tax Invoice Number (e.g. INV-2611-0001)
+ */
+export async function generateNextInvoiceNo(): Promise<string> {
+  const dateStr = getISTYYMMDD().slice(0, 4); // YYMM
+  const count = await db.invoices.count();
+  return formatInvoiceNo(dateStr, count + 1);
+}
+
+/**
+ * Generates next sequential Quotation Number (e.g. QT-261117-0001)
+ */
+export async function generateNextQuotationNo(): Promise<string> {
+  const dateStr = getISTYYMMDD();
+  const count = await db.quotations.count();
+  return formatQuotationNo(dateStr, count + 1);
+}
+
+/**
+ * Generates next sequential Lorry Receipt / Bilty Number (e.g. LR-2611-0001)
+ */
+export async function generateNextLrNo(carrierPrefix: string = 'LR'): Promise<string> {
+  const dateStr = getISTYYMMDD().slice(0, 4); // YYMM
+  const count = await db.transport_entries.count();
+  const seq = (count + 1).toString().padStart(4, '0');
+  return `${carrierPrefix}-${dateStr}-${seq}`;
 }

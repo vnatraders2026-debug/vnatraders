@@ -12,7 +12,7 @@ import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { canViewAnalytics } from '@/lib/permissions';
 
-// Lazy-load heavy admin-only routes to keep billing bundle ultra-light
+// Lazy-load heavy admin-only and operational routes to keep billing bundle ultra-light
 const DashboardPage = lazy(() =>
   import('@/features/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage }))
 );
@@ -24,6 +24,30 @@ const UsersPage = lazy(() =>
 );
 const ActivityLogsPage = lazy(() =>
   import('@/features/logs/ActivityLogsPage').then((m) => ({ default: m.ActivityLogsPage }))
+);
+const StockPage = lazy(() =>
+  import('@/features/stock/StockPage').then((m) => ({ default: m.StockPage }))
+);
+const ClientsPage = lazy(() =>
+  import('@/features/clients/ClientsPage').then((m) => ({ default: m.ClientsPage }))
+);
+const PurchaseOrdersPage = lazy(() =>
+  import('@/features/orders/PurchaseOrdersPage').then((m) => ({ default: m.PurchaseOrdersPage }))
+);
+const SaleOrdersPage = lazy(() =>
+  import('@/features/orders/SaleOrdersPage').then((m) => ({ default: m.SaleOrdersPage }))
+);
+const InvoicesPage = lazy(() =>
+  import('@/features/invoices/InvoicesPage').then((m) => ({ default: m.InvoicesPage }))
+);
+const QuotationsPage = lazy(() =>
+  import('@/features/quotations/QuotationsPage').then((m) => ({ default: m.QuotationsPage }))
+);
+const DispatchPage = lazy(() =>
+  import('@/features/dispatch/DispatchPage').then((m) => ({ default: m.DispatchPage }))
+);
+const TransportPage = lazy(() =>
+  import('@/features/transport/TransportPage').then((m) => ({ default: m.TransportPage }))
 );
 
 const LazyFallback = () => (
@@ -106,9 +130,35 @@ export const AppRoutes: React.FC = () => {
           index
           element={
             <Navigate
-              to={canViewAnalytics(user) ? '/dashboard' : '/billing'}
+              to={
+                user?.role === 'dispatcher'
+                  ? '/dispatch'
+                  : canViewAnalytics(user)
+                  ? '/dashboard'
+                  : '/billing'
+              }
               replace
             />
+          }
+        />
+
+        {/* Dispatch Workstation Route */}
+        <Route
+          path="dispatch"
+          element={
+            <Suspense fallback={<LazyFallback />}>
+              <DispatchPage />
+            </Suspense>
+          }
+        />
+
+        {/* Transportation & Logistics Route */}
+        <Route
+          path="transport"
+          element={
+            <Suspense fallback={<LazyFallback />}>
+              <TransportPage />
+            </Suspense>
           }
         />
 
@@ -117,6 +167,56 @@ export const AppRoutes: React.FC = () => {
         <Route path="bills" element={<BillsPage />} />
         <Route path="products" element={<ProductsPage />} />
         <Route path="brands" element={<BrandsPage />} />
+        <Route
+          path="stock"
+          element={
+            <Suspense fallback={<LazyFallback />}>
+              <StockPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="clients"
+          element={
+            <Suspense fallback={<LazyFallback />}>
+              <ClientsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="purchase-orders"
+          element={
+            <RequireAdminOrManager>
+              <Suspense fallback={<LazyFallback />}>
+                <PurchaseOrdersPage />
+              </Suspense>
+            </RequireAdminOrManager>
+          }
+        />
+        <Route
+          path="sale-orders"
+          element={
+            <Suspense fallback={<LazyFallback />}>
+              <SaleOrdersPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="quotations"
+          element={
+            <Suspense fallback={<LazyFallback />}>
+              <QuotationsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="invoices"
+          element={
+            <Suspense fallback={<LazyFallback />}>
+              <InvoicesPage />
+            </Suspense>
+          }
+        />
 
         {/* Analytics & Reports Routes (Admin, Manager, Supervisor) */}
         <Route

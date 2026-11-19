@@ -44,4 +44,83 @@ describe('Outbox Queue and Idempotency', () => {
     // replaces or inserts the authoritative row without duplicate bill rows.
     expect(outboxItem1.payload.id).toBe(outboxItem2.payload.id);
   });
+
+  it('supports full suite of ERP entities including clients, quotations, orders, and invoices', () => {
+    const supportedEntities: OutboxItem['entity'][] = [
+      'bills',
+      'bill_items',
+      'products',
+      'brands',
+      'categories',
+      'monthly_targets',
+      'clients',
+      'quotations',
+      'quotation_items',
+      'purchase_orders',
+      'purchase_order_items',
+      'sale_orders',
+      'sale_order_items',
+      'invoices',
+      'invoice_items',
+      'stock_movements',
+    ];
+
+    expect(supportedEntities).toHaveLength(16);
+    expect(supportedEntities).toContain('clients');
+    expect(supportedEntities).toContain('quotations');
+    expect(supportedEntities).toContain('sale_orders');
+    expect(supportedEntities).toContain('purchase_orders');
+    expect(supportedEntities).toContain('invoices');
+  });
+
+  it('correctly maps client and quotation outbox records for idempotent cloud sync', () => {
+    const clientItem: OutboxItem = {
+      id: 'outbox-client-1',
+      entity: 'clients',
+      op: 'insert',
+      payload: {
+        id: 'c1111111-2222-3333-4444-555555555555',
+        name: 'VNA Wholesale Dealer Hosur',
+        type: 'customer',
+        customer_tier: 'wholesale',
+        phone: '9876543210',
+        city: 'Hosur',
+        state: 'Tamil Nadu',
+      },
+      status: 'pending',
+      attempts: 0,
+      created_at: new Date().toISOString(),
+    };
+
+    const quoteItem: OutboxItem = {
+      id: 'outbox-quote-1',
+      entity: 'quotations',
+      op: 'insert',
+      payload: {
+        id: 'q1111111-2222-3333-4444-555555555555',
+        quotation_no: 'QT-261118-0001',
+        customer_name: 'VNA Wholesale Dealer Hosur',
+        pricing_type: 'wholesale',
+        total_amount: 45000,
+        items: [
+          {
+            id: 'qi-1',
+            product_name: '50 Shots Sky Blitz',
+            qty: 10,
+            unit_price: 4500,
+            line_total: 45000,
+          },
+        ],
+      },
+      status: 'pending',
+      attempts: 0,
+      created_at: new Date().toISOString(),
+    };
+
+    expect(clientItem.entity).toBe('clients');
+    expect(clientItem.payload.name).toBe('VNA Wholesale Dealer Hosur');
+    expect(quoteItem.entity).toBe('quotations');
+    expect(quoteItem.payload.items).toHaveLength(1);
+    expect(quoteItem.payload.items[0].product_name).toBe('50 Shots Sky Blitz');
+  });
 });

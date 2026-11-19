@@ -48,8 +48,20 @@ export const LoginPage: React.FC = () => {
       } catch (fsErr) {
         console.warn('Fullscreen entry on login bypassed:', fsErr);
       }
-      navigate('/billing', { replace: true });
+      if (result.user?.role === 'dispatcher') {
+        navigate('/dispatch', { replace: true });
+      } else if (result.user?.role === 'admin' || result.user?.role === 'manager' || result.user?.role === 'supervisor') {
+        navigate('/dashboard', { replace: true });
+      } else {
+        navigate('/billing', { replace: true });
+      }
     }
+  };
+
+  const handleQuickFill = (demoEmail: string, demoPass: string) => {
+    setEmail(demoEmail);
+    setPassword(demoPass);
+    setErrorMessage('');
   };
 
   return (
@@ -142,6 +154,36 @@ export const LoginPage: React.FC = () => {
               <span>{loading ? 'Authenticating...' : 'Sign In to Terminal'}</span>
             </Button>
           </form>
+
+          {/* Quick Demo Access Buttons */}
+          <div className="pt-2 border-t border-border space-y-1.5">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-text-muted text-center">
+              Quick Terminal Profiles (1-Click Fill)
+            </span>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleQuickFill('admin@vnacrackers.com', 'Admin@12345')}
+                className="py-1 px-2 rounded border border-border bg-background hover:bg-surface text-[11px] font-semibold text-text transition-colors text-center"
+              >
+                Admin
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickFill('staff@crackers.local', 'Admin@12345')}
+                className="py-1 px-2 rounded border border-border bg-background hover:bg-surface text-[11px] font-semibold text-text transition-colors text-center"
+              >
+                Cashier
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickFill('dispatcher@crackers.local', 'Admin@12345')}
+                className="py-1 px-2 rounded border border-accent/40 bg-accent/10 hover:bg-accent/20 text-[11px] font-bold text-accent transition-colors text-center"
+              >
+                Dispatcher
+              </button>
+            </div>
+          </div>
 
           {/* Retail System Highlights */}
           <div className="pt-4 border-t border-border grid grid-cols-3 gap-2 text-center text-[10px] text-text-muted">

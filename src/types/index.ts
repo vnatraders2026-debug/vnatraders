@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'manager' | 'supervisor' | 'cashier' | 'staff';
+export type UserRole = 'admin' | 'manager' | 'supervisor' | 'cashier' | 'staff' | 'dispatcher';
 
 export interface Profile {
   id: string;
@@ -35,11 +35,246 @@ export interface Product {
   category: string;
   brand?: string;
   unit: string;
-  price: number;
+  price: number; // Retail Price (current price)
+  wholesale_price?: number; // Wholesale Price
   stock: number;
+  min_stock?: number;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+export type PricingType = 'retail' | 'wholesale';
+
+export type ClientType = 'customer' | 'supplier' | 'both';
+export type CustomerTier = 'wholesale' | 'retail';
+
+export interface Client {
+  id: string;
+  name: string;
+  company_name?: string;
+  type: ClientType;
+  customer_tier?: CustomerTier;
+  phone: string;
+  email?: string;
+  gstin?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  credit_limit?: number;
+  outstanding_balance?: number;
+  current_balance?: number;
+  notes?: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type StockMovementType = 'in' | 'out' | 'adjustment' | 'sale' | 'purchase' | 'return' | 'damage';
+
+export interface StockMovement {
+  id: string;
+  product_id: string;
+  product_code: string;
+  product_name: string;
+  brand?: string;
+  type: StockMovementType;
+  qty: number; // Positive for additions, negative for reductions
+  prev_stock: number;
+  new_stock: number;
+  reference_no?: string; // Bill No, PO No, SO No, or Audit Ref
+  reason?: string;
+  created_by?: string;
+  created_at: string;
+}
+
+export type PurchaseOrderStatus = 'draft' | 'ordered' | 'received' | 'cancelled';
+
+export interface PurchaseOrder {
+  id: string;
+  po_no: string;
+  supplier_id?: string;
+  supplier_name: string;
+  supplier_phone?: string;
+  supplier_gstin?: string;
+  order_date: string;
+  expected_date?: string;
+  status: PurchaseOrderStatus;
+  subtotal: number;
+  tax_amount: number;
+  total_amount: number;
+  payment_status: 'unpaid' | 'partial' | 'paid';
+  paid_amount?: number;
+  notes?: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  po_id: string;
+  product_id?: string;
+  product_code?: string;
+  product_name: string;
+  brand?: string;
+  unit: string;
+  qty: number;
+  unit_cost: number;
+  line_total: number;
+}
+
+export type SaleOrderStatus = 'pending' | 'confirmed' | 'packed' | 'dispatched' | 'delivered' | 'cancelled';
+
+export interface SaleOrder {
+  id: string;
+  so_no: string;
+  client_id?: string;
+  customer_name: string;
+  customer_phone?: string;
+  customer_address?: string;
+  customer_gstin?: string;
+  pricing_type: PricingType;
+  order_date: string;
+  delivery_due_date?: string;
+  status: SaleOrderStatus;
+  subtotal: number;
+  discount_amount: number;
+  total_amount: number;
+  payment_status: 'unpaid' | 'partial' | 'paid';
+  paid_amount?: number;
+  payment_mode?: PaymentMode;
+  // Dispatch & Transport info for crackers logistics
+  transport_name?: string;
+  lr_number?: string;
+  vehicle_number?: string;
+  driver_phone?: string;
+  destination?: string;
+  dispatched_at?: string;
+  delivered_at?: string;
+  assigned_dispatcher_id?: string;
+  assigned_dispatcher_name?: string;
+  dispatch_assigned_at?: string;
+  verified_items?: string[]; // IDs of SaleOrderItem verified by dispatcher
+  dispatched_by?: string;
+  notes?: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SaleOrderItem {
+  id: string;
+  so_id: string;
+  product_id?: string;
+  product_code?: string;
+  product_name: string;
+  brand?: string;
+  unit: string;
+  qty: number;
+  unit_price: number;
+  discount_percent?: number;
+  line_total: number;
+}
+
+export type InvoicePaymentStatus = 'unpaid' | 'partial' | 'paid';
+
+export interface Invoice {
+  id: string;
+  invoice_no: string;
+  so_id?: string; // Linked Sale Order if any
+  client_id?: string;
+  customer_name: string;
+  customer_phone?: string;
+  customer_address?: string;
+  customer_gstin?: string;
+  invoice_date: string;
+  due_date?: string;
+  pricing_type: PricingType;
+  subtotal: number;
+  discount_amount: number;
+  taxable_amount: number;
+  gst_rate?: number; // e.g. 18% for fireworks
+  cgst: number;
+  sgst: number;
+  igst: number;
+  round_off: number;
+  total_amount: number;
+  payment_status: InvoicePaymentStatus;
+  paid_amount: number;
+  payment_mode?: PaymentMode;
+  transport_name?: string;
+  lr_number?: string;
+  vehicle_number?: string;
+  notes?: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvoiceItem {
+  id: string;
+  invoice_id: string;
+  product_id?: string;
+  product_code?: string;
+  product_name: string;
+  brand?: string;
+  hsn_code?: string; // Fireworks HSN code default '3604'
+  unit: string;
+  qty: number;
+  unit_price: number;
+  discount_percent?: number;
+  taxable_value: number;
+  line_total: number;
+}
+
+export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'converted' | 'expired' | 'rejected';
+
+export interface Quotation {
+  id: string;
+  quotation_no: string;
+  client_id?: string;
+  customer_name: string;
+  customer_phone?: string;
+  customer_address?: string;
+  customer_gstin?: string;
+  pricing_type: PricingType;
+  quotation_date: string;
+  valid_until: string;
+  status: QuotationStatus;
+  converted_to?: 'sale_order' | 'invoice';
+  converted_id?: string;
+  subtotal: number;
+  discount_amount: number;
+  taxable_amount: number;
+  gst_rate?: number; // 18%
+  cgst: number;
+  sgst: number;
+  igst: number;
+  round_off: number;
+  total_amount: number;
+  terms_and_conditions?: string;
+  notes?: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuotationItem {
+  id: string;
+  quotation_id: string;
+  product_id?: string;
+  product_code?: string;
+  product_name: string;
+  brand?: string;
+  hsn_code?: string; // Fireworks HSN code default '3604'
+  unit: string;
+  qty: number;
+  unit_price: number;
+  discount_percent?: number;
+  taxable_value: number;
+  line_total: number;
 }
 
 export type PaymentMode = 'cash' | 'upi' | 'card';
@@ -73,9 +308,74 @@ export interface BillItem {
   line_total: number;
 }
 
+export type TransportStatus = 'booked' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'cancelled';
+export type FreightType = 'to_pay' | 'paid' | 'tbb' | 'free_delivery';
+
+export interface TransportEntry {
+  id: string;
+  lr_no: string; // Lorry Receipt / Bilty No
+  transport_name: string; // Carrier Name
+  vehicle_no?: string;
+  driver_name?: string;
+  driver_phone?: string;
+  dispatch_date: string;
+  estimated_delivery_date?: string;
+  actual_delivery_date?: string;
+  destination: string;
+  source_location?: string;
+  
+  // Consignee / Customer
+  so_id?: string;
+  so_no?: string;
+  invoice_id?: string;
+  invoice_no?: string;
+  client_id?: string;
+  consignee_name: string;
+  consignee_phone?: string;
+  consignee_address?: string;
+  consignee_gstin?: string;
+
+  // Cargo / Cracker Consignment
+  total_boxes: number;
+  total_weight_kg?: number;
+  consignment_value: number;
+  items_summary?: string;
+
+  // Freight & Charges
+  freight_type: FreightType;
+  freight_amount: number;
+  loading_charges?: number;
+  total_charges: number;
+
+  // Status & Tracking
+  status: TransportStatus;
+  delivery_remarks?: string;
+  dispatched_by?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface OutboxItem {
   id: string;
-  entity: 'bills' | 'bill_items' | 'products' | 'brands' | 'categories' | 'monthly_targets';
+  entity:
+    | 'bills'
+    | 'bill_items'
+    | 'products'
+    | 'brands'
+    | 'categories'
+    | 'monthly_targets'
+    | 'clients'
+    | 'quotations'
+    | 'quotation_items'
+    | 'purchase_orders'
+    | 'purchase_order_items'
+    | 'sale_orders'
+    | 'sale_order_items'
+    | 'invoices'
+    | 'invoice_items'
+    | 'stock_movements'
+    | 'transport_entries';
   op: 'insert' | 'update' | 'upsert' | 'delete';
   payload: any;
   status: 'pending' | 'syncing' | 'done' | 'failed';

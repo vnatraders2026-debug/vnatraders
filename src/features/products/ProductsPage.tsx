@@ -45,7 +45,8 @@ const productSchema = z.object({
   category: z.string().min(1, 'Category is required').trim(),
   brand: z.string().min(1, 'Brand is required').trim().default('Standard'),
   unit: z.string().default('box'),
-  price: z.number().gt(0, 'Price must be greater than 0'),
+  price: z.number().gt(0, 'Retail price must be greater than 0'),
+  wholesale_price: z.number().min(0, 'Wholesale price cannot be negative').optional().default(0),
   stock: z.number().min(0, 'Stock cannot be negative').default(0),
 });
 
@@ -96,6 +97,7 @@ export const ProductsPage: React.FC = () => {
       unit: 'box',
       stock: 0,
       price: 0,
+      wholesale_price: 0,
     },
   });
 
@@ -313,6 +315,7 @@ export const ProductsPage: React.FC = () => {
       category: availableCategoryNames[0] || 'Sparklers',
       unit: 'box',
       price: 0,
+      wholesale_price: 0,
       stock: 0,
     });
     setIsDrawerOpen(true);
@@ -327,6 +330,7 @@ export const ProductsPage: React.FC = () => {
       category: product.category,
       unit: product.unit,
       price: product.price,
+      wholesale_price: product.wholesale_price || 0,
       stock: product.stock,
     });
     setIsDrawerOpen(true);
@@ -350,6 +354,10 @@ export const ProductsPage: React.FC = () => {
       ? editingProduct.price
       : data.price;
 
+    const finalWholesalePrice = isAdmin
+      ? (data.wholesale_price !== undefined ? Number(data.wholesale_price) || 0 : (editingProduct?.wholesale_price || 0))
+      : (editingProduct?.wholesale_price || 0);
+
     const productRecord: Product = {
       id: productId,
       code: data.code.toUpperCase(),
@@ -358,6 +366,7 @@ export const ProductsPage: React.FC = () => {
       category: data.category,
       unit: data.unit,
       price: finalPrice,
+      wholesale_price: finalWholesalePrice,
       stock: data.stock,
       is_active: editingProduct ? editingProduct.is_active : true,
       created_at: editingProduct?.created_at || now,
@@ -487,13 +496,13 @@ export const ProductsPage: React.FC = () => {
 
   // Download Sample Format CSV
   const handleDownloadSampleCsv = () => {
-    const sampleHeaders = 'code,name,brand,category,unit,price,stock\n';
+    const sampleHeaders = 'code,name,brand,category,unit,price,wholesale_price,stock\n';
     const sampleRows = [
-      'SPK-10,10 cm Electric Sparklers,Standard,Sparklers,box,45,250',
-      'RCK-10,Baby Rockets,General,Rockets,box,120,140',
-      'BMB-10,Hydro Bombs 2 inch,General,Bombs,box,95,200',
-      'FLP-10,Flower Pots Special,Standard,Flower Pots,box,180,120',
-      'CHK-10,Ground Chakkars Big,Standard,Ground Chakkars,box,140,160',
+      'SPK-10,10 cm Electric Sparklers,Standard,Sparklers,box,45,32,250',
+      'RCK-10,Baby Rockets,General,Rockets,box,120,85,140',
+      'BMB-10,Hydro Bombs 2 inch,General,Bombs,box,95,68,200',
+      'FLP-10,Flower Pots Special,Standard,Flower Pots,box,180,125,120',
+      'CHK-10,Ground Chakkars Big,Standard,Ground Chakkars,box,140,98,160',
     ].join('\n');
 
     const csvContent = sampleHeaders + sampleRows;
@@ -509,9 +518,9 @@ export const ProductsPage: React.FC = () => {
     toast('Sample CSV format downloaded successfully', 'success');
   };
 
-  // CSV Export with brand
+  // CSV Export with brand & wholesale price
   const handleExportCsv = () => {
-    const headers = ['code', 'name', 'brand', 'category', 'unit', 'price', 'stock', 'status'];
+    const headers = ['code', 'name', 'brand', 'category', 'unit', 'price', 'wholesale_price', 'stock', 'status'];
     const rows = products.map((p) => [
       `"${p.code}"`,
       `"${p.name.replace(/"/g, '""')}"`,
@@ -519,6 +528,7 @@ export const ProductsPage: React.FC = () => {
       `"${p.category}"`,
       `"${p.unit}"`,
       p.price,
+      p.wholesale_price || 0,
       p.stock,
       p.is_active ? 'active' : 'inactive',
     ]);
@@ -562,6 +572,7 @@ export const ProductsPage: React.FC = () => {
     const catIdx = headers.indexOf('category');
     const unitIdx = headers.indexOf('unit');
     const priceIdx = headers.indexOf('price');
+    const wholesaleIdx = headers.indexOf('wholesale_price') > -1 ? headers.indexOf('wholesale_price') : headers.indexOf('wholesale');
     const stockIdx = headers.indexOf('stock');
 
     const previewList: Array<{ data: any; errors: string[] }> = [];
@@ -577,6 +588,7 @@ export const ProductsPage: React.FC = () => {
       const category = cleanVals[catIdx] || 'General';
       const unit = cleanVals[unitIdx] || 'box';
       const price = parseFloat(cleanVals[priceIdx] || '0');
+      const wholesale_price = wholesaleIdx > -1 ? parseFloat(cleanVals[wholesaleIdx] || '0') : 0;
       const stock = parseFloat(cleanVals[stockIdx] || '0');
 
       const errors: string[] = [];
@@ -586,7 +598,7 @@ export const ProductsPage: React.FC = () => {
       if (isNaN(stock) || stock < 0) errors.push('Invalid stock');
 
       previewList.push({
-        data: { code, name, brand, category, unit, price, stock },
+        data: { code, name, brand, category, unit, price, wholesale_price, stock },
         errors,
       });
     }
@@ -620,6 +632,7 @@ export const ProductsPage: React.FC = () => {
           category: row.data.category,
           unit: row.data.unit,
           price: row.data.price,
+          wholesale_price: row.data.wholesale_price || existing?.wholesale_price || 0,
           stock: row.data.stock,
           is_active: true,
           created_at: existing?.created_at || now,
@@ -928,7 +941,8 @@ export const ProductsPage: React.FC = () => {
               <TableHead>Brand</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Unit</TableHead>
-              <TableHead className="text-right">Price (₹)</TableHead>
+              <TableHead className="text-right">Retail (₹)</TableHead>
+              <TableHead className="text-right">Wholesale (₹)</TableHead>
               <TableHead className="text-right">Stock</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -1010,6 +1024,13 @@ export const ProductsPage: React.FC = () => {
                   <TableCell className="text-xs text-text-muted uppercase">{p.unit}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">
                     {formatINR(p.price)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-medium text-accent">
+                    {p.wholesale_price && p.wholesale_price > 0 ? (
+                      formatINR(p.wholesale_price)
+                    ) : (
+                      <span className="text-text-muted text-[11px]">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     <span
@@ -1147,18 +1168,32 @@ export const ProductsPage: React.FC = () => {
             <option value="bag">Bag</option>
           </Select>
 
-          <Input
-            label="Unit Price (₹)"
-            type="number"
-            step="0.5"
-            {...register('price', { valueAsNumber: true })}
-            error={errors.price?.message}
-            placeholder="0.00"
-            disabled={!isAdmin}
-            readOnly={!isAdmin}
-            className={!isAdmin ? 'bg-background/80 text-text-muted cursor-not-allowed select-none' : ''}
-            helperText={!isAdmin ? 'Rate editing is restricted to Admin only' : undefined}
-          />
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Retail Price / MRP (₹)"
+              type="number"
+              step="0.5"
+              {...register('price', { valueAsNumber: true })}
+              error={errors.price?.message}
+              placeholder="0.00"
+              disabled={!isAdmin}
+              readOnly={!isAdmin}
+              className={!isAdmin ? 'bg-background/80 text-text-muted cursor-not-allowed select-none' : ''}
+              helperText="Counter retail rate"
+            />
+            <Input
+              label="Wholesale Price (₹)"
+              type="number"
+              step="0.5"
+              {...register('wholesale_price', { valueAsNumber: true })}
+              error={errors.wholesale_price?.message}
+              placeholder="0.00"
+              disabled={!isAdmin}
+              readOnly={!isAdmin}
+              className={!isAdmin ? 'bg-background/80 text-text-muted cursor-not-allowed select-none' : ''}
+              helperText="Bulk / dealer rate"
+            />
+          </div>
 
           <Input
             label="Available Stock"
@@ -1502,9 +1537,17 @@ export const ProductsPage: React.FC = () => {
                 <span className="font-semibold text-text">{selectedProductForDetails.category}</span>
               </div>
               <div>
-                <span className="text-text-muted block">Price:</span>
+                <span className="text-text-muted block">Retail Price:</span>
                 <span className="font-bold text-accent text-sm tabular-nums">
                   {formatINR(selectedProductForDetails.price)} / {selectedProductForDetails.unit}
+                </span>
+              </div>
+              <div>
+                <span className="text-text-muted block">Wholesale Price:</span>
+                <span className="font-bold text-text text-sm tabular-nums">
+                  {selectedProductForDetails.wholesale_price && selectedProductForDetails.wholesale_price > 0
+                    ? `${formatINR(selectedProductForDetails.wholesale_price)} / ${selectedProductForDetails.unit}`
+                    : 'Not set'}
                 </span>
               </div>
               <div>

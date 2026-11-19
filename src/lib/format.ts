@@ -129,6 +129,38 @@ export function formatBillNo(dateStr: string, deviceCode: string, sequence: numb
   return `${dateStr}-${cleanDevice}-${seqPadded}`;
 }
 
+/**
+ * Format Purchase Order number: PO-YYMMDD-XXXX (e.g., PO-261117-0001)
+ */
+export function formatPoNo(dateStr: string, sequence: number): string {
+  const seqPadded = String(sequence).padStart(4, '0');
+  return `PO-${dateStr}-${seqPadded}`;
+}
+
+/**
+ * Format Sale Order number: SO-YYMMDD-XXXX (e.g., SO-261117-0001)
+ */
+export function formatSoNo(dateStr: string, sequence: number): string {
+  const seqPadded = String(sequence).padStart(4, '0');
+  return `SO-${dateStr}-${seqPadded}`;
+}
+
+/**
+ * Format Tax Invoice number: INV-YYMM-XXXX (e.g., INV-2611-0001)
+ */
+export function formatInvoiceNo(dateStrYYMM: string, sequence: number): string {
+  const seqPadded = String(sequence).padStart(4, '0');
+  return `INV-${dateStrYYMM}-${seqPadded}`;
+}
+
+/**
+ * Format Quotation / Estimate number: QT-YYMMDD-XXXX (e.g., QT-261117-0001)
+ */
+export function formatQuotationNo(dateStr: string, sequence: number): string {
+  const seqPadded = String(sequence).padStart(4, '0');
+  return `QT-${dateStr}-${seqPadded}`;
+}
+
 export interface BrandTotalBreakdown {
   subtotal: number;
   discountPercent: number;
