@@ -102,6 +102,9 @@ export interface PurchaseOrder {
   expected_date?: string;
   status: PurchaseOrderStatus;
   subtotal: number;
+  discount_amount?: number;
+  discount_percent?: number;
+  brand_discounts?: Record<string, number>;
   tax_amount: number;
   total_amount: number;
   payment_status: 'unpaid' | 'partial' | 'paid';
@@ -122,6 +125,7 @@ export interface PurchaseOrderItem {
   unit: string;
   qty: number;
   unit_cost: number;
+  discount_percent?: number;
   line_total: number;
 }
 
@@ -141,6 +145,8 @@ export interface SaleOrder {
   status: SaleOrderStatus;
   subtotal: number;
   discount_amount: number;
+  discount_percent?: number;
+  brand_discounts?: Record<string, number>;
   total_amount: number;
   payment_status: 'unpaid' | 'partial' | 'paid';
   paid_amount?: number;
@@ -194,6 +200,8 @@ export interface Invoice {
   pricing_type: PricingType;
   subtotal: number;
   discount_amount: number;
+  discount_percent?: number;
+  brand_discounts?: Record<string, number>;
   taxable_amount: number;
   gst_rate?: number; // e.g. 18% for fireworks
   cgst: number;
@@ -247,6 +255,8 @@ export interface Quotation {
   converted_id?: string;
   subtotal: number;
   discount_amount: number;
+  discount_percent?: number;
+  brand_discounts?: Record<string, number>;
   taxable_amount: number;
   gst_rate?: number; // 18%
   cgst: number;

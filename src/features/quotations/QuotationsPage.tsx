@@ -24,6 +24,7 @@ import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { SearchableProductSelect, ProductSearchAddBar } from '@/components/ui/ProductSelectBox';
 import { QuickProductModal } from '@/components/QuickProductModal';
+import { BrandDiscountsSection, calculateBrandWiseTotals } from '@/components/BrandDiscountsSection';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
@@ -106,6 +107,7 @@ export const QuotationsPage: React.FC = () => {
       line_total: number;
     }>
   >([]);
+  const [brandDiscounts, setBrandDiscounts] = useState<Record<string, number>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isQuickProductOpen, setIsQuickProductOpen] = useState(false);
 
@@ -181,6 +183,7 @@ export const QuotationsPage: React.FC = () => {
     setTaxMode('intra');
     setTermsAndConditions(DEFAULT_QUOTATION_TERMS);
     setNotes('');
+    setBrandDiscounts({});
     setQuoteItems([]);
     setIsCreateOpen(true);
   };
@@ -205,6 +208,7 @@ export const QuotationsPage: React.FC = () => {
     setTaxMode(quote.igst > 0 ? 'inter' : 'intra');
     setTermsAndConditions(quote.terms_and_conditions || DEFAULT_QUOTATION_TERMS);
     setNotes(quote.notes || '');
+    setBrandDiscounts(quote.brand_discounts || {});
 
     const items = await db.quotation_items.where('quotation_id').equals(quote.id).toArray();
     setQuoteItems(
@@ -373,6 +377,26 @@ export const QuotationsPage: React.FC = () => {
     setQuoteItems(quoteItems.filter((_, i) => i !== index));
   };
 
+  const handleBrandDiscountChange = (brand: string, pct: number) => {
+    setBrandDiscounts((prev) => ({ ...prev, [brand]: pct }));
+    setQuoteItems((prev) =>
+      prev.map((it) => {
+        if ((it.brand || 'Standard').toLowerCase() === brand.toLowerCase()) {
+          const gross = it.qty * it.unit_price;
+          const disc = Math.round((gross * pct / 100) * 100) / 100;
+          const net = Math.max(0, Math.round((gross - disc) * 100) / 100);
+          return {
+            ...it,
+            discount_percent: pct,
+            taxable_value: net,
+            line_total: net,
+          };
+        }
+        return it;
+      })
+    );
+  };
+
   // Switching pricing mode recalibrates standard catalog items
   const handleSwitchPricingType = (mode: PricingType) => {
     setPricingType(mode);
@@ -471,6 +495,8 @@ export const QuotationsPage: React.FC = () => {
         status: quoteStatus,
         subtotal: calculations.subtotal,
         discount_amount: calculations.totalDiscount,
+        discount_percent: calculations.subtotal > 0 ? Math.round((calculations.totalDiscount / calculations.subtotal) * 10000) / 100 : 0,
+        brand_discounts: brandDiscounts,
         taxable_amount: calculations.taxableAmount,
         gst_rate: 18,
         cgst: calculations.cgst,
@@ -1637,6 +1663,38 @@ export const QuotationsPage: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Brand-Wise Discounts Section */}
+          <BrandDiscountsSection
+            items={quoteItems}
+            brandDiscounts={brandDiscounts}
+            onChangeBrandDiscount={handleBrandDiscountChange}
+            onClearAllDiscounts={() => {
+              setBrandDiscounts({});
+              setQuoteItems((prev) =>
+                prev.map((it) => {
+                  const gross = it.qty * it.unit_price;
+                  return { ...it, discount_percent: 0, taxable_value: gross, line_total: gross };
+                })
+              );
+            }}
+            onApplyAllDiscounts={(pct) => {
+              const brandTotals = calculateBrandWiseTotals(quoteItems, brandDiscounts);
+              const next: Record<string, number> = {};
+              brandTotals.brandSummaries.forEach((s) => {
+                next[s.brand] = pct;
+              });
+              setBrandDiscounts(next);
+              setQuoteItems((prev) =>
+                prev.map((it) => {
+                  const gross = it.qty * it.unit_price;
+                  const disc = Math.round((gross * pct / 100) * 100) / 100;
+                  const net = Math.max(0, Math.round((gross - disc) * 100) / 100);
+                  return { ...it, discount_percent: pct, taxable_value: net, line_total: net };
+                })
+              );
+            }}
+          />
 
           {/* Calculation & Terms */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

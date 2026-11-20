@@ -13,6 +13,7 @@ import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { SearchableProductSelect, ProductSearchAddBar } from '@/components/ui/ProductSelectBox';
 import { QuickProductModal } from '@/components/QuickProductModal';
+import { BrandDiscountsSection, calculateBrandWiseTotals } from '@/components/BrandDiscountsSection';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
@@ -75,6 +76,7 @@ export const SaleOrdersPage: React.FC = () => {
     unit_price: number;
     line_total: number;
   }>>([]);
+  const [brandDiscounts, setBrandDiscounts] = useState<Record<string, number>>({});
   const [isSaving, setIsSaving] = useState(false);
 
   // Quick Create New Product Modal state
@@ -162,6 +164,7 @@ export const SaleOrdersPage: React.FC = () => {
     setVehicleNumber('');
     setDestination('');
     setNotes('');
+    setBrandDiscounts({});
 
     const first = products[0];
     const initialPrice = first?.wholesale_price && first.wholesale_price > 0 ? first.wholesale_price : first?.price || 0;
@@ -352,9 +355,17 @@ export const SaleOrdersPage: React.FC = () => {
     setSoItems(soItems.filter((_, i) => i !== index));
   };
 
-  const soTotal = useMemo(() => {
-    return Math.round(soItems.reduce((sum, item) => sum + item.line_total, 0) * 100) / 100;
-  }, [soItems]);
+  const brandDiscountTotals = useMemo(() => {
+    return calculateBrandWiseTotals(
+      soItems.map((it) => ({
+        brand: it.brand || 'Standard',
+        qty: it.qty,
+        unit_price: it.unit_price,
+        line_total: it.line_total,
+      })),
+      brandDiscounts
+    );
+  }, [soItems, brandDiscounts]);
 
   const handleSaveSo = async () => {
     if (!customerName.trim()) {
@@ -384,9 +395,11 @@ export const SaleOrdersPage: React.FC = () => {
         order_date: orderDate,
         delivery_due_date: deliveryDueDate || undefined,
         status: 'pending',
-        subtotal: soTotal,
-        discount_amount: 0,
-        total_amount: soTotal,
+        subtotal: brandDiscountTotals.grossSubtotal,
+        discount_amount: brandDiscountTotals.totalDiscount,
+        discount_percent: brandDiscountTotals.effectiveDiscountPercent,
+        brand_discounts: brandDiscounts,
+        total_amount: brandDiscountTotals.netTotal,
         payment_status: 'unpaid',
         paid_amount: 0,
         transport_name: transportName.trim() || undefined,
@@ -399,19 +412,25 @@ export const SaleOrdersPage: React.FC = () => {
         updated_at: now,
       };
 
-      const itemsRecords: SaleOrderItem[] = validItems.map((it) => ({
-        id: generateUUID(),
-        so_id: soId,
-        product_id: it.product_id || undefined,
-        product_code: it.product_code || undefined,
-        product_name: it.product_name.trim(),
-        brand: it.brand || 'Standard',
-        unit: it.unit || 'box',
-        qty: it.qty,
-        unit_price: it.unit_price,
-        discount_percent: 0,
-        line_total: it.line_total,
-      }));
+      const itemsRecords: SaleOrderItem[] = validItems.map((it) => {
+        const b = it.brand || 'Standard';
+        const discPct = brandDiscounts[b] || 0;
+        const gross = Math.round(it.qty * it.unit_price * 100) / 100;
+        const disc = Math.round((gross * discPct / 100) * 100) / 100;
+        return {
+          id: generateUUID(),
+          so_id: soId,
+          product_id: it.product_id || undefined,
+          product_code: it.product_code || undefined,
+          product_name: it.product_name.trim(),
+          brand: b,
+          unit: it.unit || 'box',
+          qty: it.qty,
+          unit_price: it.unit_price,
+          discount_percent: discPct,
+          line_total: Math.max(0, Math.round((gross - disc) * 100) / 100),
+        };
+      });
 
       await db.transaction('rw', [db.sale_orders, db.sale_order_items], async () => {
         await db.sale_orders.put(soRecord);
@@ -1278,9 +1297,40 @@ export const SaleOrdersPage: React.FC = () => {
               </table>
             </div>
 
-            <div className="flex justify-between items-center pt-2 border-t border-border font-bold text-sm">
-              <span className="text-text-muted">Total Order Value ({pricingType}):</span>
-              <span className="text-accent text-base font-mono">{formatINR(soTotal)}</span>
+            {/* Brand-Wise Discounts Section */}
+            <BrandDiscountsSection
+              items={soItems}
+              brandDiscounts={brandDiscounts}
+              onChangeBrandDiscount={(brand, pct) => {
+                setBrandDiscounts((prev) => ({ ...prev, [brand]: pct }));
+              }}
+              onClearAllDiscounts={() => setBrandDiscounts({})}
+              onApplyAllDiscounts={(pct) => {
+                const next: Record<string, number> = {};
+                brandDiscountTotals.brandSummaries.forEach((s) => {
+                  next[s.brand] = pct;
+                });
+                setBrandDiscounts(next);
+              }}
+            />
+
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pt-2 border-t border-border gap-2 text-sm">
+              <div className="text-xs space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-text-muted">Gross Order Value:</span>
+                  <span className="font-mono font-bold text-text">{formatINR(brandDiscountTotals.grossSubtotal)}</span>
+                </div>
+                {brandDiscountTotals.totalDiscount > 0 && (
+                  <div className="flex items-center gap-2 text-danger">
+                    <span>Brand Discount:</span>
+                    <span className="font-mono font-bold">- {formatINR(brandDiscountTotals.totalDiscount)} ({brandDiscountTotals.effectiveDiscountPercent}%)</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-text-muted font-bold">Net Total Order Value ({pricingType}):</span>
+                <span className="text-accent text-lg font-black font-mono">{formatINR(brandDiscountTotals.netTotal)}</span>
+              </div>
             </div>
           </div>
 
@@ -1694,10 +1744,26 @@ export const SaleOrdersPage: React.FC = () => {
                         <td className="p-2 text-right font-mono font-extrabold text-xs">
                           {selectedOrderItems.reduce((acc, i) => acc + (i.qty || 0), 0)} Boxes
                         </td>
-                        {printDocType === 'order' && <td className="p-2 text-right uppercase text-[11px]">Total Order Value:</td>}
                         {printDocType === 'order' && (
-                          <td className="p-2 text-right font-mono font-black text-sm text-gray-900">
-                            {formatINR(selectedOrder.total_amount)}
+                          <td colSpan={2} className="p-2 text-right">
+                            <div className="space-y-1">
+                              {selectedOrder.discount_amount > 0 && (
+                                <div className="flex justify-between text-xs font-semibold text-gray-600">
+                                  <span>Gross Subtotal:</span>
+                                  <span className="font-mono">{formatINR(selectedOrder.subtotal)}</span>
+                                </div>
+                              )}
+                              {selectedOrder.discount_amount > 0 && (
+                                <div className="flex justify-between text-xs font-bold text-red-600">
+                                  <span>Brand Discount ({selectedOrder.discount_percent || 0}%):</span>
+                                  <span className="font-mono">- {formatINR(selectedOrder.discount_amount)}</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between text-sm font-black text-gray-900 pt-0.5 border-t border-gray-300">
+                                <span>Total Order Value:</span>
+                                <span className="font-mono">{formatINR(selectedOrder.total_amount)}</span>
+                              </div>
+                            </div>
                           </td>
                         )}
                       </tr>

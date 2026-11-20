@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { SearchableProductSelect, ProductSearchAddBar } from '@/components/ui/ProductSelectBox';
+import { BrandDiscountsSection, calculateBrandWiseTotals } from '@/components/BrandDiscountsSection';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
@@ -82,7 +83,7 @@ export const InvoicesPage: React.FC = () => {
     taxable_value: number;
     line_total: number;
   }>>([]);
-
+  const [brandDiscounts, setBrandDiscounts] = useState<Record<string, number>>({});
   const [isSaving, setIsSaving] = useState(false);
 
   // View / Print Modal State
@@ -154,6 +155,7 @@ export const InvoicesPage: React.FC = () => {
     setLrNumber('');
     setVehicleNumber('');
     setNotes('');
+    setBrandDiscounts({});
     setInitialPaymentStatus('unpaid');
     setInitialPaidAmount(0);
     setInitialPaymentMode('cash');
@@ -231,24 +233,53 @@ export const InvoicesPage: React.FC = () => {
     // Load SO Items
     const soDbItems = await db.sale_order_items.where('so_id').equals(soId).toArray();
     if (soDbItems.length > 0) {
+      if (so.brand_discounts && Object.keys(so.brand_discounts).length > 0) {
+        setBrandDiscounts(so.brand_discounts);
+      } else {
+        setBrandDiscounts({});
+      }
       const itemsList = soDbItems.map((it) => {
-        const taxable = it.line_total;
+        const b = it.brand || 'Standard';
+        const discPct = it.discount_percent ?? so.brand_discounts?.[b] ?? 0;
+        const gross = it.qty * it.unit_price;
+        const disc = Math.round((gross * discPct / 100) * 100) / 100;
+        const net = Math.max(0, Math.round((gross - disc) * 100) / 100);
         return {
           product_id: it.product_id || '',
           product_code: it.product_code || '',
           product_name: it.product_name,
-          brand: it.brand || 'Standard',
+          brand: b,
           hsn_code: '3604',
           unit: it.unit || 'box',
           qty: it.qty,
           unit_price: it.unit_price,
-          discount_percent: 0,
-          taxable_value: taxable,
-          line_total: taxable,
+          discount_percent: discPct,
+          taxable_value: net,
+          line_total: net,
         };
       });
       setInvItems(itemsList);
     }
+  };
+
+  const handleBrandDiscountChange = (brand: string, pct: number) => {
+    setBrandDiscounts((prev) => ({ ...prev, [brand]: pct }));
+    setInvItems((prev) =>
+      prev.map((it) => {
+        if ((it.brand || 'Standard').toLowerCase() === brand.toLowerCase()) {
+          const gross = it.qty * it.unit_price;
+          const disc = Math.round((gross * pct / 100) * 100) / 100;
+          const net = Math.max(0, Math.round((gross - disc) * 100) / 100);
+          return {
+            ...it,
+            discount_percent: pct,
+            taxable_value: net,
+            line_total: net,
+          };
+        }
+        return it;
+      })
+    );
   };
 
   // Item change helpers
@@ -505,6 +536,8 @@ export const InvoicesPage: React.FC = () => {
         pricing_type: pricingType,
         subtotal: calculations.subtotal,
         discount_amount: calculations.totalDiscount,
+        discount_percent: calculations.subtotal > 0 ? Math.round((calculations.totalDiscount / calculations.subtotal) * 10000) / 100 : 0,
+        brand_discounts: brandDiscounts,
         taxable_amount: calculations.taxableAmount,
         gst_rate: 18,
         cgst: calculations.cgst,
@@ -1315,6 +1348,38 @@ export const InvoicesPage: React.FC = () => {
               </table>
             </div>
           </div>
+
+          {/* Brand-Wise Discounts Section */}
+          <BrandDiscountsSection
+            items={invItems}
+            brandDiscounts={brandDiscounts}
+            onChangeBrandDiscount={handleBrandDiscountChange}
+            onClearAllDiscounts={() => {
+              setBrandDiscounts({});
+              setInvItems((prev) =>
+                prev.map((it) => {
+                  const gross = it.qty * it.unit_price;
+                  return { ...it, discount_percent: 0, taxable_value: gross, line_total: gross };
+                })
+              );
+            }}
+            onApplyAllDiscounts={(pct) => {
+              const brandTotals = calculateBrandWiseTotals(invItems, brandDiscounts);
+              const next: Record<string, number> = {};
+              brandTotals.brandSummaries.forEach((s) => {
+                next[s.brand] = pct;
+              });
+              setBrandDiscounts(next);
+              setInvItems((prev) =>
+                prev.map((it) => {
+                  const gross = it.qty * it.unit_price;
+                  const disc = Math.round((gross * pct / 100) * 100) / 100;
+                  const net = Math.max(0, Math.round((gross - disc) * 100) / 100);
+                  return { ...it, discount_percent: pct, taxable_value: net, line_total: net };
+                })
+              );
+            }}
+          />
 
           {/* Totals & Tax Calculation Breakdown */}
           <div className="bg-background p-3 rounded border border-border grid grid-cols-1 md:grid-cols-2 gap-4">
