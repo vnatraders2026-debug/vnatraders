@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X, ChevronDown, Check, Package, Plus, AlertCircle } from 'lucide-react';
 import { Product } from '../../types';
 import { formatINR } from '../../lib/format';
@@ -75,7 +76,15 @@ export const SearchableProductSelect: React.FC<SearchableProductSelectProps> = (
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const [popoverCoords, setPopoverCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    placement: 'bottom' | 'top';
+  } | null>(null);
 
   const selectedProduct = useMemo(
     () => products.find((p) => p.id === value),
@@ -91,11 +100,50 @@ export const SearchableProductSelect: React.FC<SearchableProductSelectProps> = (
     setHighlightedIndex(0);
   }, [searchQuery]);
 
-  // Click outside listener to close dropdown
+  const updatePosition = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const dropdownHeight = 280;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const placeTop = spaceBelow < dropdownHeight && rect.top > dropdownHeight;
+
+    const top = placeTop ? Math.max(8, rect.top - dropdownHeight - 4) : rect.bottom + 4;
+    const width = Math.max(rect.width, 380);
+    const maxLeft = Math.max(8, window.innerWidth - width - 12);
+    const left = Math.min(Math.max(8, rect.left), maxLeft);
+
+    setPopoverCoords({
+      top,
+      left,
+      width,
+      placement: placeTop ? 'top' : 'bottom',
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      updatePosition();
+      const handleReposition = () => updatePosition();
+      window.addEventListener('resize', handleReposition);
+      window.addEventListener('scroll', handleReposition, true);
+      return () => {
+        window.removeEventListener('resize', handleReposition);
+        window.removeEventListener('scroll', handleReposition, true);
+      };
+    }
+  }, [isOpen, updatePosition]);
+
+  // Click outside listener to close dropdown (handles both container and portal)
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        popoverRef.current &&
+        !popoverRef.current.contains(target)
+      ) {
         setIsOpen(false);
         setSearchQuery('');
       }
@@ -188,126 +236,140 @@ export const SearchableProductSelect: React.FC<SearchableProductSelectProps> = (
         <ChevronDown size={14} className={`text-text-muted transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
-      {/* Dropdown Popover */}
-      {isOpen && (
-        <div className="absolute left-0 top-full mt-1 w-full min-w-[340px] max-w-lg bg-surface border border-border rounded-md shadow-xl z-50 overflow-hidden text-xs">
-          {/* Search Input in Dropdown */}
-          <div className="p-2 border-b border-border bg-background flex items-center gap-2">
-            <Search size={14} className="text-text-muted shrink-0 ml-1" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by cracker name, code, brand..."
-              className="w-full bg-transparent border-none text-xs text-text placeholder:text-text-muted focus:outline-none py-0.5"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="text-text-muted hover:text-text p-0.5"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-
-          {/* Action to switch to custom product */}
-          {onCustomSelect && (
-            <div className="p-1.5 bg-accent/5 border-b border-accent/20 flex items-center justify-between">
-              <span className="text-[10px] text-text-muted">Can't find your cracker?</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsOpen(false);
-                  onCustomSelect();
-                }}
-                className="text-[11px] font-bold text-accent hover:underline flex items-center gap-1"
-              >
-                <Plus size={11} />
-                <span>+ Custom / Non-Existing Product</span>
-              </button>
+      {/* Dropdown Popover via Portal to prevent any parent overflow clipping */}
+      {isOpen &&
+        popoverCoords &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            style={{
+              position: 'fixed',
+              top: `${popoverCoords.top}px`,
+              left: `${popoverCoords.left}px`,
+              width: `${popoverCoords.width}px`,
+              zIndex: 99999,
+            }}
+            className="bg-surface border border-border rounded-md shadow-2xl overflow-hidden text-xs flex flex-col max-h-[300px]"
+            onKeyDown={handleKeyDown}
+          >
+            {/* Search Input in Dropdown */}
+            <div className="p-2 border-b border-border bg-background flex items-center gap-2 shrink-0">
+              <Search size={14} className="text-text-muted shrink-0 ml-1" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by cracker name, code, brand..."
+                className="w-full bg-transparent border-none text-xs text-text placeholder:text-text-muted focus:outline-none py-0.5"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="text-text-muted hover:text-text p-0.5"
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
-          )}
 
-          {/* Results List */}
-          <div className="max-h-56 overflow-y-auto divide-y divide-border/40">
-            {filteredProducts.length === 0 ? (
-              <div className="p-4 text-center text-text-muted space-y-2">
-                <p>No crackers matching "{searchQuery}"</p>
-                {onCustomSelect && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsOpen(false);
-                      onCustomSelect();
-                    }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-white text-[11px] font-bold shadow-xs hover:bg-accent/90"
-                  >
-                    <Plus size={12} />
-                    <span>Use "{searchQuery}" as Non-Existing Product</span>
-                  </button>
-                )}
+            {/* Action to switch to custom product */}
+            {onCustomSelect && (
+              <div className="p-1.5 bg-accent/5 border-b border-accent/20 flex items-center justify-between shrink-0">
+                <span className="text-[10px] text-text-muted">Can't find your cracker?</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onCustomSelect();
+                  }}
+                  className="text-[11px] font-bold text-accent hover:underline flex items-center gap-1"
+                >
+                  <Plus size={11} />
+                  <span>+ Custom / Non-Existing Product</span>
+                </button>
               </div>
-            ) : (
-              filteredProducts.map((p, idx) => {
-                const isSelected = p.id === value;
-                const isHighlighted = idx === highlightedIndex;
-                const price =
-                  pricingType === 'wholesale'
-                    ? p.wholesale_price || p.price
-                    : p.price;
-
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => handleSelect(p)}
-                    onMouseEnter={() => setHighlightedIndex(idx)}
-                    className={`p-2 flex items-center justify-between cursor-pointer transition-colors ${
-                      isHighlighted ? 'bg-accent/10' : isSelected ? 'bg-surface' : 'hover:bg-background/80'
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0 pr-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-text truncate">{p.name}</span>
-                        <span className="text-[10px] text-text-muted font-mono shrink-0">
-                          [{p.code}]
-                        </span>
-                        {isSelected && <Check size={12} className="text-accent shrink-0" />}
-                      </div>
-                      <div className="flex items-center gap-2 text-[10px] text-text-muted mt-0.5">
-                        <span>Brand: <strong className="text-text">{p.brand || 'Standard'}</strong></span>
-                        {p.category && <span>• {p.category}</span>}
-                        <span>• Unit: <strong className="text-text uppercase">{p.unit}</strong></span>
-                      </div>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <div className="font-mono font-bold text-accent">
-                        {formatINR(price)}
-                      </div>
-                      {showStock && (
-                        <div
-                          className={`text-[9px] font-mono font-bold mt-0.5 ${
-                            p.stock > 10
-                              ? 'text-success'
-                              : p.stock > 0
-                              ? 'text-warning'
-                              : 'text-danger'
-                          }`}
-                        >
-                          Stock: {p.stock}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
             )}
-          </div>
-        </div>
-      )}
+
+            {/* Results List */}
+            <div className="flex-1 overflow-y-auto divide-y divide-border/40 min-h-0">
+              {filteredProducts.length === 0 ? (
+                <div className="p-4 text-center text-text-muted space-y-2">
+                  <p>No crackers matching "{searchQuery}"</p>
+                  {onCustomSelect && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsOpen(false);
+                        onCustomSelect();
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-white text-[11px] font-bold shadow-xs hover:bg-accent/90"
+                    >
+                      <Plus size={12} />
+                      <span>Use "{searchQuery}" as Non-Existing Product</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                filteredProducts.map((p, idx) => {
+                  const isSelected = p.id === value;
+                  const isHighlighted = idx === highlightedIndex;
+                  const price =
+                    pricingType === 'wholesale'
+                      ? p.wholesale_price || p.price
+                      : p.price;
+
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => handleSelect(p)}
+                      onMouseEnter={() => setHighlightedIndex(idx)}
+                      className={`p-2 flex items-center justify-between cursor-pointer transition-colors ${
+                        isHighlighted ? 'bg-accent/10' : isSelected ? 'bg-surface' : 'hover:bg-background/80'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0 pr-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-text truncate">{p.name}</span>
+                          <span className="text-[10px] text-text-muted font-mono shrink-0">
+                            [{p.code}]
+                          </span>
+                          {isSelected && <Check size={12} className="text-accent shrink-0" />}
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] text-text-muted mt-0.5">
+                          <span>Brand: <strong className="text-text">{p.brand || 'Standard'}</strong></span>
+                          {p.category && <span>• {p.category}</span>}
+                          <span>• Unit: <strong className="text-text uppercase">{p.unit}</strong></span>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <div className="font-mono font-bold text-accent">
+                          {formatINR(price)}
+                        </div>
+                        {showStock && (
+                          <div
+                            className={`text-[9px] font-mono font-bold mt-0.5 ${
+                              p.stock > 10
+                                ? 'text-success'
+                                : p.stock > 0
+                                ? 'text-warning'
+                                : 'text-danger'
+                            }`}
+                          >
+                            Stock: {p.stock}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { SearchableProductSelect, ProductSearchAddBar } from '@/components/ui/ProductSelectBox';
+import { ProductCatalogPicker } from '@/components/ProductCatalogPicker';
 import { BrandDiscountsSection, calculateBrandWiseTotals } from '@/components/BrandDiscountsSection';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -357,7 +358,19 @@ export const InvoicesPage: React.FC = () => {
     ]);
   };
 
-  const handleAddProductDirectly = (prod: Product) => {
+  // Map of productId -> quantity currently in invoice for catalog picker tracking
+  const invAddedItemsMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    invItems.forEach((it) => {
+      if (it.product_id) {
+        map[it.product_id] = (map[it.product_id] || 0) + (Number(it.qty) || 0);
+      }
+    });
+    return map;
+  }, [invItems]);
+
+  const handleAddProductDirectly = (prod: Product, quantityToAdd: number = 1) => {
+    const qty = quantityToAdd > 0 ? quantityToAdd : 1;
     const rate = pricingType === 'wholesale' ? (prod.wholesale_price || prod.price) : prod.price;
     setInvItems((prev) => {
       // If table only has 1 empty item, replace it
@@ -370,11 +383,11 @@ export const InvoicesPage: React.FC = () => {
             brand: prod.brand || 'Standard',
             hsn_code: '3604',
             unit: prod.unit || 'box',
-            qty: 1,
+            qty: qty,
             unit_price: rate,
             discount_percent: 0,
-            taxable_value: rate,
-            line_total: rate,
+            taxable_value: qty * rate,
+            line_total: qty * rate,
           },
         ];
       }
@@ -382,7 +395,7 @@ export const InvoicesPage: React.FC = () => {
       const existingIdx = prev.findIndex((it) => it.product_id === prod.id);
       if (existingIdx !== -1) {
         const next = [...prev];
-        const newQty = (Number(next[existingIdx].qty) || 0) + 1;
+        const newQty = (Number(next[existingIdx].qty) || 0) + qty;
         const sub = newQty * next[existingIdx].unit_price;
         const disc = next[existingIdx].discount_percent || 0;
         const taxable = Math.round((sub - (sub * disc) / 100) * 100) / 100;
@@ -396,7 +409,7 @@ export const InvoicesPage: React.FC = () => {
         return next;
       }
 
-      toast(`Added "${prod.name}" to invoice`, 'success');
+      toast(`Added "${prod.name}" to invoice (${qty} boxes)`, 'success');
       return [
         ...prev,
         {
@@ -406,11 +419,11 @@ export const InvoicesPage: React.FC = () => {
           brand: prod.brand || 'Standard',
           hsn_code: '3604',
           unit: prod.unit || 'box',
-          qty: 1,
+          qty: qty,
           unit_price: rate,
           discount_percent: 0,
-          taxable_value: rate,
-          line_total: rate,
+          taxable_value: qty * rate,
+          line_total: qty * rate,
         },
       ];
     });
@@ -1215,10 +1228,11 @@ export const InvoicesPage: React.FC = () => {
           </div>
 
           {/* Dynamic Line Items */}
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold text-text uppercase tracking-wide">
-                Cracker Line Items (HSN 3604)
+                Cracker Line Items (HSN 3604) • {invItems.length} lines •{' '}
+                {invItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0)} Total Boxes
               </span>
               <Button variant="secondary" size="sm" onClick={handleAddItemRow} className="gap-1 text-xs">
                 <Plus size={13} />
@@ -1226,11 +1240,22 @@ export const InvoicesPage: React.FC = () => {
               </Button>
             </div>
 
-            {/* Search Option & Product Select Box Bar */}
+            {/* Visual Cracker Catalog & Quick-Add Browser */}
+            <ProductCatalogPicker
+              products={products}
+              pricingType={pricingType}
+              addedItemsMap={invAddedItemsMap}
+              onSelectProduct={handleAddProductDirectly}
+              onAddCustomProduct={handleAddCustomProductDirectly}
+              title="Cracker Catalog & Quick-Add to Invoice"
+              defaultOpen={true}
+            />
+
+            {/* Quick Search Option & Product Select Box Bar */}
             <div className="bg-background p-2.5 border border-border rounded-md shadow-xs">
               <label className="block text-[11px] font-bold text-text mb-1 uppercase tracking-wider flex items-center gap-1">
                 <Search size={13} className="text-accent" />
-                <span>Search &amp; Add Cracker From Catalog</span>
+                <span>Quick Search &amp; Add Cracker</span>
               </label>
               <ProductSearchAddBar
                 products={products}
@@ -1241,7 +1266,7 @@ export const InvoicesPage: React.FC = () => {
               />
             </div>
 
-            <div className="border border-border rounded overflow-x-auto">
+            <div className="border border-border/80 rounded-lg overflow-x-auto bg-surface shadow-xs">
               <table className="w-full text-xs">
                 <thead className="bg-background border-b border-border text-text-muted">
                   <tr>

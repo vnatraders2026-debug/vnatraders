@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { SearchableProductSelect, ProductSearchAddBar } from '@/components/ui/ProductSelectBox';
+import { ProductCatalogPicker } from '@/components/ProductCatalogPicker';
 import { QuickProductModal } from '@/components/QuickProductModal';
 import { BrandDiscountsSection, calculateBrandWiseTotals } from '@/components/BrandDiscountsSection';
 import { TableSkeleton } from '@/components/ui/Skeleton';
@@ -251,16 +252,29 @@ export const QuotationsPage: React.FC = () => {
     }
   };
 
+  // Map of productId -> quantity currently in quote for catalog picker tracking
+  const quoteAddedItemsMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    quoteItems.forEach((it) => {
+      if (it.product_id) {
+        map[it.product_id] = (map[it.product_id] || 0) + (Number(it.qty) || 0);
+      }
+    });
+    return map;
+  }, [quoteItems]);
+
   // Add Item to Quotation
-  const handleAddItem = (productId: string) => {
+  const handleAddItem = (productId: string, quantityToAdd: number = 1) => {
     const prod = products.find((p) => p.id === productId);
     if (!prod) return;
+
+    const qtyToAdd = quantityToAdd > 0 ? quantityToAdd : 1;
 
     // Check if already in items
     const existingIndex = quoteItems.findIndex((it) => it.product_id === prod.id);
     if (existingIndex >= 0) {
       const updated = [...quoteItems];
-      updated[existingIndex].qty += 1;
+      updated[existingIndex].qty += qtyToAdd;
       const rate = updated[existingIndex].unit_price;
       const disc = updated[existingIndex].discount_percent;
       const gross = updated[existingIndex].qty * rate;
@@ -268,6 +282,7 @@ export const QuotationsPage: React.FC = () => {
       updated[existingIndex].taxable_value = Math.round(net * 100) / 100;
       updated[existingIndex].line_total = Math.round(net * 100) / 100;
       setQuoteItems(updated);
+      toast(`Updated "${prod.name}" quantity to ${updated[existingIndex].qty}`, 'info');
       return;
     }
 
@@ -278,7 +293,9 @@ export const QuotationsPage: React.FC = () => {
 
     // Check brand discount
     let discountPercent = 0;
-    if (prod.brand) {
+    if (brandDiscounts[prod.brand || 'Standard'] !== undefined) {
+      discountPercent = brandDiscounts[prod.brand || 'Standard'];
+    } else if (prod.brand) {
       const matchedBrand = brands.find(
         (b) => b.name.trim().toLowerCase() === prod.brand?.trim().toLowerCase()
       );
@@ -287,8 +304,7 @@ export const QuotationsPage: React.FC = () => {
       }
     }
 
-    const qty = 1;
-    const gross = qty * unitPrice;
+    const gross = qtyToAdd * unitPrice;
     const net = gross * (1 - discountPercent / 100);
 
     setQuoteItems([
@@ -301,13 +317,14 @@ export const QuotationsPage: React.FC = () => {
         brand: prod.brand || 'Standard',
         hsn_code: '3604',
         unit: prod.unit || 'box',
-        qty: 1,
+        qty: qtyToAdd,
         unit_price: unitPrice,
         discount_percent: discountPercent,
         taxable_value: Math.round(net * 100) / 100,
         line_total: Math.round(net * 100) / 100,
       },
     ]);
+    toast(`Added "${prod.name}" to quotation (${qtyToAdd} boxes)`, 'success');
   };
 
   // Add Custom / Ad-hoc Item
@@ -1478,11 +1495,22 @@ export const QuotationsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Search Option & Product Select Box Bar */}
+            {/* Visual Cracker Catalog & Quick-Add Browser */}
+            <ProductCatalogPicker
+              products={products}
+              pricingType={pricingType}
+              addedItemsMap={quoteAddedItemsMap}
+              onSelectProduct={(p, qty) => handleAddItem(p.id, qty)}
+              onAddCustomProduct={handleAddCustomProductWithName}
+              title="Cracker Catalog & Quick-Add to Quote"
+              defaultOpen={true}
+            />
+
+            {/* Quick Search Option & Product Select Box Bar */}
             <div className="bg-background p-2.5 border border-border rounded-md shadow-xs">
               <label className="block text-[11px] font-bold text-text mb-1 uppercase tracking-wider flex items-center gap-1">
                 <Search size={13} className="text-accent" />
-                <span>Search &amp; Add Cracker From Catalog</span>
+                <span>Quick Search &amp; Add Cracker</span>
               </label>
               <ProductSearchAddBar
                 products={products}
@@ -1498,7 +1526,7 @@ export const QuotationsPage: React.FC = () => {
                 No items added yet. Search crackers above or click "Custom Row" to build the quote.
               </div>
             ) : (
-              <div className="overflow-x-auto border border-border rounded">
+              <div className="overflow-x-auto border border-border rounded-lg bg-surface shadow-xs">
                 <table className="w-full text-xs">
                   <thead className="bg-background border-b border-border text-text-muted font-bold">
                     <tr>

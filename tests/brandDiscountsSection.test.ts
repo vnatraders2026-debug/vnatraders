@@ -83,3 +83,4 @@ describe('BrandDiscountsSection & calculateBrandWiseTotals', () => {
     expect(result.netTotal).toBe(900);
   });
 });
+

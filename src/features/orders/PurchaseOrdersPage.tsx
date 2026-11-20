@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { SearchableProductSelect, ProductSearchAddBar } from '@/components/ui/ProductSelectBox';
+import { ProductCatalogPicker } from '@/components/ProductCatalogPicker';
 import { QuickProductModal } from '@/components/QuickProductModal';
 import { BrandDiscountsSection, calculateBrandWiseTotals } from '@/components/BrandDiscountsSection';
 import { TableSkeleton } from '@/components/ui/Skeleton';
@@ -182,7 +183,19 @@ export const PurchaseOrdersPage: React.FC = () => {
     ]);
   };
 
-  const handleAddProductDirectly = (prod: Product) => {
+  // Map of productId -> quantity currently in purchase order for catalog picker tracking
+  const poAddedItemsMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    poItems.forEach((it) => {
+      if (it.product_id) {
+        map[it.product_id] = (map[it.product_id] || 0) + (Number(it.qty) || 0);
+      }
+    });
+    return map;
+  }, [poItems]);
+
+  const handleAddProductDirectly = (prod: Product, quantityToAdd: number = 25) => {
+    const qty = quantityToAdd > 0 ? quantityToAdd : 25;
     const cost = prod.wholesale_price || prod.price || 0;
     setPoItems((prev) => {
       // If table only has 1 empty custom item, replace it
@@ -194,9 +207,9 @@ export const PurchaseOrdersPage: React.FC = () => {
             product_name: prod.name,
             brand: prod.brand || 'Standard',
             unit: prod.unit || 'box',
-            qty: 50,
+            qty: qty,
             unit_cost: cost,
-            line_total: 50 * cost,
+            line_total: qty * cost,
           },
         ];
       }
@@ -204,7 +217,7 @@ export const PurchaseOrdersPage: React.FC = () => {
       const existingIdx = prev.findIndex((it) => it.product_id === prod.id);
       if (existingIdx !== -1) {
         const next = [...prev];
-        const newQty = (Number(next[existingIdx].qty) || 0) + 50;
+        const newQty = (Number(next[existingIdx].qty) || 0) + qty;
         next[existingIdx] = {
           ...next[existingIdx],
           qty: newQty,
@@ -214,7 +227,7 @@ export const PurchaseOrdersPage: React.FC = () => {
         return next;
       }
 
-      toast(`Added "${prod.name}" to Purchase Order`, 'success');
+      toast(`Added "${prod.name}" to Purchase Order (${qty} boxes)`, 'success');
       return [
         ...prev,
         {
@@ -223,9 +236,9 @@ export const PurchaseOrdersPage: React.FC = () => {
           product_name: prod.name,
           brand: prod.brand || 'Standard',
           unit: prod.unit || 'box',
-          qty: 50,
+          qty: qty,
           unit_cost: cost,
-          line_total: 50 * cost,
+          line_total: qty * cost,
         },
       ];
     });
@@ -763,11 +776,14 @@ export const PurchaseOrdersPage: React.FC = () => {
           </div>
 
           {/* Line Items Table */}
-          <div className="space-y-2 border border-border rounded p-3 bg-background">
+          <div className="space-y-3 border border-border rounded p-3 bg-background">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-bold text-text uppercase flex items-center gap-1.5">
                 <Boxes size={14} className="text-accent" />
-                <span>Ordered Cracker Items ({poItems.length})</span>
+                <span>
+                  Ordered Cracker Items ({poItems.length} items •{' '}
+                  {poItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0)} Total Boxes)
+                </span>
               </span>
               <div className="flex flex-wrap items-center gap-2">
                 <Button variant="secondary" size="sm" onClick={handleAddItemRow} className="gap-1 min-h-[30px] text-xs">
@@ -785,11 +801,22 @@ export const PurchaseOrdersPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Search Option & Product Select Box Bar */}
+            {/* Visual Cracker Catalog & Quick-Add Browser */}
+            <ProductCatalogPicker
+              products={products}
+              pricingType="wholesale"
+              addedItemsMap={poAddedItemsMap}
+              onSelectProduct={handleAddProductDirectly}
+              onAddCustomProduct={handleAddCustomProductDirectly}
+              title="Factory Cracker Catalog & Quick-Order"
+              defaultOpen={true}
+            />
+
+            {/* Fast Quick Search Input */}
             <div className="bg-surface p-2.5 border border-border rounded-md shadow-xs">
               <label className="block text-[11px] font-bold text-text mb-1 uppercase tracking-wider flex items-center gap-1">
                 <Search size={13} className="text-accent" />
-                <span>Search &amp; Add Cracker From Catalog</span>
+                <span>Quick Search &amp; Add Cracker</span>
               </label>
               <ProductSearchAddBar
                 products={products}
@@ -800,7 +827,8 @@ export const PurchaseOrdersPage: React.FC = () => {
               />
             </div>
 
-            <div className="overflow-x-auto max-h-[50vh] overflow-y-auto">
+            {/* Full Visibility Ordered Items Table (no inner overflow squish trap) */}
+            <div className="overflow-x-auto border border-border/80 rounded-lg bg-surface shadow-xs">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-border text-text-muted text-left">
