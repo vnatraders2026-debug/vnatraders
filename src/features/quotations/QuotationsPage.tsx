@@ -46,7 +46,9 @@ import {
   Layers,
   CheckCheck,
   Edit3,
+  Building2,
 } from 'lucide-react';
+import { useCompany } from '@/features/company/CompanyContext';
 
 export const DEFAULT_QUOTATION_TERMS = [
   '1. Price Validity: Rates quoted are strictly valid for 7 days or until the validity date indicated, subject to festival raw material market fluctuations.',
@@ -62,6 +64,7 @@ export const QuotationsPage: React.FC = () => {
   const { user } = useAuth();
   const isAdminOrManager = user?.role === 'admin' || user?.role === 'manager';
   const { toast } = useToast();
+  const { activeCompany, companies } = useCompany();
 
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -71,6 +74,7 @@ export const QuotationsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [pricingFilter, setPricingFilter] = useState<string>('all');
+  const [companyFilter, setCompanyFilter] = useState<string>('all');
 
   // Create / Edit Modal State
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -506,6 +510,8 @@ export const QuotationsPage: React.FC = () => {
         customer_phone: customerPhone.trim() || undefined,
         customer_address: customerAddress.trim() || undefined,
         customer_gstin: customerGstin.trim().toUpperCase() || undefined,
+        company_id: activeCompany?.id,
+        company_name: activeCompany?.name,
         pricing_type: pricingType,
         quotation_date: quotationDate,
         valid_until: validUntil,
@@ -674,6 +680,8 @@ export const QuotationsPage: React.FC = () => {
         customer_phone: quote.customer_phone,
         customer_address: quote.customer_address,
         customer_gstin: quote.customer_gstin,
+        company_id: quote.company_id || activeCompany?.id,
+        company_name: quote.company_name || activeCompany?.name,
         pricing_type: quote.pricing_type,
         order_date: new Date().toISOString().slice(0, 10),
         delivery_due_date: quote.valid_until,
@@ -778,6 +786,8 @@ export const QuotationsPage: React.FC = () => {
         customer_phone: quote.customer_phone,
         customer_address: quote.customer_address,
         customer_gstin: quote.customer_gstin,
+        company_id: quote.company_id || activeCompany?.id,
+        company_name: quote.company_name || activeCompany?.name,
         invoice_date: new Date().toISOString().slice(0, 10),
         due_date: quote.valid_until,
         pricing_type: quote.pricing_type,
@@ -904,6 +914,12 @@ export const QuotationsPage: React.FC = () => {
   const filteredQuotations = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
     return quotations.filter((q) => {
+      if (companyFilter !== 'all') {
+        const isDefault = companies.find((c) => c.is_default)?.id === companyFilter;
+        const matches = q.company_id ? q.company_id === companyFilter : isDefault;
+        if (!matches) return false;
+      }
+
       const qStatus = q.status === 'sent' && q.valid_until < todayStr ? 'expired' : q.status;
 
       if (statusFilter !== 'all') {
@@ -932,7 +948,7 @@ export const QuotationsPage: React.FC = () => {
 
       return true;
     });
-  }, [quotations, statusFilter, pricingFilter, searchQuery]);
+  }, [quotations, companyFilter, statusFilter, pricingFilter, searchQuery, companies]);
 
   // Metrics Bar
   const stats = useMemo(() => {
@@ -1061,6 +1077,21 @@ export const QuotationsPage: React.FC = () => {
 
           <div className="w-full sm:w-44">
             <Select
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              options={[
+                { value: 'all', label: 'All Companies' },
+                ...companies.map((c) => ({
+                  value: c.id,
+                  label: `${c.name}${c.code ? ` (${c.code})` : ''}`,
+                })),
+              ]}
+              className="text-xs"
+            />
+          </div>
+
+          <div className="w-full sm:w-40">
+            <Select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               options={[
@@ -1076,7 +1107,7 @@ export const QuotationsPage: React.FC = () => {
             />
           </div>
 
-          <div className="w-full sm:w-40">
+          <div className="w-full sm:w-36">
             <Select
               value={pricingFilter}
               onChange={(e) => setPricingFilter(e.target.value)}
@@ -1112,6 +1143,7 @@ export const QuotationsPage: React.FC = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Quote No</TableHead>
+                  <TableHead>Company</TableHead>
                   <TableHead>Date &amp; Validity</TableHead>
                   <TableHead>Customer / Buyer</TableHead>
                   <TableHead>Rate Mode</TableHead>
@@ -1139,6 +1171,11 @@ export const QuotationsPage: React.FC = () => {
                         </button>
                         <span className="text-[10px] text-text-muted font-normal block">
                           By: {q.created_by}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent/10 text-accent border border-accent/20" title={q.company_name}>
+                          {q.company_name || companies.find((c) => c.id === q.company_id)?.code || 'VNA'}
                         </span>
                       </TableCell>
 
@@ -1300,6 +1337,22 @@ export const QuotationsPage: React.FC = () => {
         maxWidth="xl"
       >
         <div className="space-y-4 max-h-[82vh] overflow-y-auto pr-1">
+          {/* Operating Company Banner */}
+          <div className="bg-accent/10 border border-accent/20 rounded-md p-2.5 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <Building2 size={15} className="text-accent" />
+              <div>
+                <span className="font-bold text-text">Operating Firm: {activeCompany?.name || 'VNA TRADERS'}</span>
+                <span className="text-text-muted ml-2">GSTIN: {activeCompany?.gstin || '33ACSPV5299F1Z5'}</span>
+              </div>
+            </div>
+            {activeCompany?.code && (
+              <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-surface border text-accent text-[11px]">
+                {activeCompany.code}
+              </span>
+            )}
+          </div>
+
           {/* Header row: Number, Date, Validity */}
           <div className="p-3 bg-surface border border-border rounded grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             <div>
@@ -1930,6 +1983,11 @@ export const QuotationsPage: React.FC = () => {
             </div>
 
             {/* Printable Document Container */}
+            {(() => {
+              const quoteCompany = selectedQuote
+                ? companies.find((c) => c.id === selectedQuote.company_id) || activeCompany
+                : activeCompany;
+              return (
             <div id="quotation-print-area" className="printable-area">
               <div className="p-4 bg-white text-gray-900 border border-gray-300 rounded shadow-xs space-y-4 print:p-0 print:border-none print:shadow-none text-xs">
                 {/* Header Section */}
@@ -1937,13 +1995,13 @@ export const QuotationsPage: React.FC = () => {
                   <div>
                     <VnaLogo size="md" />
                     <div className="font-extrabold text-base uppercase text-gray-900 mt-1">
-                      VNA TRADERS
+                      {quoteCompany?.name || 'VNA TRADERS'}
                     </div>
                     <div className="text-[11px] text-gray-600 leading-tight">
-                      Wholesale &amp; Retail Fireworks Merchant<br />
-                      Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109<br />
-                      Phone: +91 94431 23456 / +91 94432 98765<br />
-                      <strong>GSTIN: 33ACSPV5299F1Z5</strong> • State Code: 33 (Tamil Nadu)
+                      {quoteCompany?.legal_name || 'Wholesale & Retail Fireworks Merchant'}<br />
+                      {quoteCompany?.address ? `${quoteCompany.address}, ${quoteCompany.city || 'Hosur'}, ${quoteCompany.state || 'Tamil Nadu'} - ${quoteCompany.pincode || '635109'}` : 'Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109'}<br />
+                      {quoteCompany?.phone ? `Phone: ${quoteCompany.phone}` : 'Phone: +91 94431 23456 / +91 94432 98765'}<br />
+                      <strong>GSTIN: {quoteCompany?.gstin || '33ACSPV5299F1Z5'}</strong> • State Code: 33 ({quoteCompany?.state || 'Tamil Nadu'})
                     </div>
                   </div>
 
@@ -2058,10 +2116,10 @@ export const QuotationsPage: React.FC = () => {
                         <span className="font-bold text-gray-800 uppercase block">
                           Bank Details for Advance Booking / Payment:
                         </span>
-                        <div>Bank Name: <strong>State Bank of India (SBI)</strong></div>
-                        <div>Account Name: <strong>VNA TRADERS</strong></div>
-                        <div>Account Number: <strong className="font-mono">3948201004521</strong></div>
-                        <div>IFSC Code: <strong className="font-mono">SBIN0001234</strong> (Hosur Branch)</div>
+                        <div>Bank Name: <strong>{quoteCompany?.bank_name || 'State Bank of India (SBI)'}</strong></div>
+                        <div>Account Name: <strong>{quoteCompany?.legal_name || quoteCompany?.name || 'VNA TRADERS'}</strong></div>
+                        <div>Account Number: <strong className="font-mono">{quoteCompany?.bank_account_no || '3948201004521'}</strong></div>
+                        <div>IFSC Code: <strong className="font-mono">{quoteCompany?.bank_ifsc || 'SBIN0001234'}</strong> {quoteCompany?.bank_branch ? `(${quoteCompany.bank_branch})` : '(Hosur Branch)'}</div>
                         <div className="text-gray-500 italic mt-0.5">
                           Kindly share transaction UTR / receipt after transfer.
                         </div>
@@ -2164,12 +2222,14 @@ export const QuotationsPage: React.FC = () => {
 
                   <div>
                     <div className="h-10 border-b border-gray-400"></div>
-                    <div className="font-bold text-gray-800 mt-1">For VNA TRADERS</div>
+                    <div className="font-bold text-gray-800 mt-1">For {quoteCompany?.name || 'VNA TRADERS'}</div>
                     <div className="text-[10px] text-gray-500">Authorized Signatory</div>
                   </div>
                 </div>
               </div>
             </div>
+              );
+            })()}
           </div>
         </Dialog>
       )}

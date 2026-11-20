@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/Input';
 import { Dialog } from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
+import { useCompany } from '@/features/company/CompanyContext';
 import { VnaLogo } from '@/components/VnaLogo';
 import {
   TrendingUp,
@@ -42,6 +43,7 @@ import {
   ShoppingBag,
   Layers,
   X,
+  Building2,
 } from 'lucide-react';
 
 export interface ProductSalesStat {
@@ -79,6 +81,10 @@ export interface ProductSalesStat {
 export const DashboardPage: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { activeCompany, companies } = useCompany();
+
+  // Company scope filter: 'active' (selected operating firm) or 'all' (all firms consolidated)
+  const [companyScope, setCompanyScope] = useState<'active' | 'all'>('active');
 
   // Control state - default to 'month' so data is populated on first load
   const [dateRange, setDateRange] = useState<'today' | 'yesterday' | '7days' | 'month' | 'all'>('month');
@@ -108,7 +114,7 @@ export const DashboardPage: React.FC = () => {
 
   // Main data query for all metrics & sales telemetry
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['vna_dashboard_analytics', dateRange],
+    queryKey: ['vna_dashboard_analytics', dateRange, companyScope, activeCompany?.id],
     queryFn: async () => {
       await initLocalDatabase();
       await restoreMissingBills();
@@ -116,13 +122,25 @@ export const DashboardPage: React.FC = () => {
         syncService.triggerSync().catch(() => {});
       }
 
-      const [allBills, allItems, allProducts, allProfiles, targetSetting] = await Promise.all([
+      const [allRawBills, allItems, allProducts, allProfiles, targetSetting] = await Promise.all([
         db.bills.toArray(),
         db.bill_items.toArray(),
         db.products.toArray(),
         db.profiles.toArray(),
         db.settings.get('monthly_target'),
       ]);
+
+      // Scope bills based on active company vs all companies
+      const targetComps = await db.companies.toArray();
+      const defaultCompId = targetComps.find((c) => c.is_default)?.id || targetComps[0]?.id;
+
+      const allBills = allRawBills.filter((b) => {
+        if (companyScope === 'all') return true;
+        if (!activeCompany) return true;
+        if (b.company_id) return b.company_id === activeCompany.id;
+        // For backwards compatibility, legacy bills without company_id map to primary default firm
+        return activeCompany.id === defaultCompId;
+      });
 
       const profMap = new Map<string, string>();
       allProfiles.forEach((p) => profMap.set(p.id, p.full_name || p.email || 'Staff'));
@@ -611,20 +629,50 @@ export const DashboardPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base sm:text-lg font-black text-text tracking-tight">
-                VNA TRADERS
+                {companyScope === 'all' ? 'All Registered Firms (Consolidated)' : activeCompany?.name || 'VNA TRADERS'}
               </h1>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
-                Live Sales Analytics
+                {companyScope === 'all' ? `${companies.length} Firms Combined` : activeCompany?.code || 'Live Sales'}
               </span>
             </div>
-            <p className="text-xs text-text-muted mt-0.5">
-              Fireworks Merchant Analytics • Hosur Main Depot
+            <p className="text-xs text-text-muted mt-0.5 font-mono">
+              {companyScope === 'all'
+                ? `Consolidated revenue across all registered entities`
+                : `GSTIN: ${activeCompany?.gstin || '33ACSPV5299F1Z5'} • ${activeCompany?.city || 'Hosur'}`}
             </p>
           </div>
         </div>
 
-        {/* Date Filters & Controls */}
+        {/* Date & Company Filters & Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Company Scope Selector */}
+          <div className="flex rounded-md border border-border p-1 bg-background text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setCompanyScope('active')}
+              className={`px-2.5 py-1.5 rounded transition-all min-h-[30px] font-bold flex items-center gap-1.5 ${
+                companyScope === 'active'
+                  ? 'bg-accent text-white shadow-xs'
+                  : 'text-text-muted hover:text-text hover:bg-surface'
+              }`}
+              title={`View sales metrics for ${activeCompany?.name || 'active firm'}`}
+            >
+              <Building2 size={12} />
+              <span>{activeCompany?.code || 'This Firm'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCompanyScope('all')}
+              className={`px-2.5 py-1.5 rounded transition-all min-h-[30px] font-bold flex items-center gap-1 ${
+                companyScope === 'all'
+                  ? 'bg-accent text-white shadow-xs'
+                  : 'text-text-muted hover:text-text hover:bg-surface'
+              }`}
+              title="Consolidated metrics across all registered firms"
+            >
+              <span>All Firms ({companies.length})</span>
+            </button>
+          </div>
           {/* Quick Date Range Pills */}
           <div className="flex rounded-md border border-border p-1 bg-background text-xs font-semibold">
             {(

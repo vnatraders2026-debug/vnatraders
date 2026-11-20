@@ -49,6 +49,9 @@ const DispatchPage = lazy(() =>
 const TransportPage = lazy(() =>
   import('@/features/transport/TransportPage').then((m) => ({ default: m.TransportPage }))
 );
+const CompaniesPage = lazy(() =>
+  import('@/features/company/CompaniesPage').then((m) => ({ default: m.CompaniesPage }))
+);
 
 const LazyFallback = () => (
   <div className="space-y-4 p-4">
@@ -214,6 +217,14 @@ export const AppRoutes: React.FC = () => {
           element={
             <Suspense fallback={<LazyFallback />}>
               <InvoicesPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="companies"
+          element={
+            <Suspense fallback={<LazyFallback />}>
+              <CompaniesPage />
             </Suspense>
           }
         />

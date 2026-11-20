@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useCompany } from '@/features/company/CompanyContext';
 import { useCartStore, CartItem } from './store';
 import { db, getShopSettings, initLocalDatabase } from '@/db';
 import { searchProducts, createProductSearchIndex } from '@/db/search';
@@ -81,6 +82,20 @@ export const NewBillPage: React.FC = () => {
     items: BillItem[];
   } | null>(null);
   const [shopSettings, setShopSettings] = useState<ShopSettings | null>(null);
+  const { activeCompany } = useCompany();
+
+  const effectiveSettings = useMemo(() => {
+    if (!shopSettings) return null;
+    if (!activeCompany) return shopSettings;
+    return {
+      ...shopSettings,
+      shop_name: activeCompany.name,
+      gst_no: activeCompany.gstin,
+      shop_address: `${activeCompany.address}${activeCompany.city ? `, ${activeCompany.city}` : ''}${activeCompany.pincode ? ` - ${activeCompany.pincode}` : ''}`,
+      shop_phone: activeCompany.phone,
+      receipt_footer: activeCompany.receipt_footer || shopSettings.receipt_footer,
+    };
+  }, [shopSettings, activeCompany]);
 
   async function loadData() {
     await initLocalDatabase();
@@ -244,7 +259,10 @@ export const NewBillPage: React.FC = () => {
         <div className="flex items-center gap-3">
           <VnaLogo size="sm" />
           <span className="text-text-muted">•</span>
-          <span className="text-text-muted font-medium">Terminal Mode: Instant Offline</span>
+          <span className="text-text-muted font-medium">Terminal:</span>
+          <span className="text-[11px] font-bold text-accent px-2 py-0.5 rounded bg-accent/10 border border-accent/25 truncate max-w-[150px] sm:max-w-none">
+            {activeCompany?.name || 'VNA TRADERS'}
+          </span>
           {editingBillNo && (
             <div className="flex items-center gap-1.5 font-bold text-accent px-2 py-0.5 rounded bg-accent/10">
               <span>Editing Bill: {editingBillNo}</span>
@@ -594,13 +612,13 @@ export const NewBillPage: React.FC = () => {
       )}
 
       {/* RECEIPT MODAL ON SAVE */}
-      {savedReceiptData && shopSettings && user && (
+      {savedReceiptData && effectiveSettings && user && (
         <ReceiptModal
           bill={savedReceiptData.bill}
           items={savedReceiptData.items}
-          settings={shopSettings}
+          settings={effectiveSettings}
           currentUser={user}
-          autoPrint={shopSettings.auto_print ?? true}
+          autoPrint={effectiveSettings.auto_print ?? true}
           onNewBill={() => {
             setSavedReceiptData(null);
             clearCart(dbBrands);

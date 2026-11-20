@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/Toast';
 import { PlusCircle, Menu, RefreshCw, Maximize, Minimize, DownloadCloud } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { forceAppUpdate } from '@/lib/appUpdate';
+import { CompanySwitcher } from '@/components/CompanySwitcher';
 
 import { VnaLogo } from '@/components/VnaLogo';
 
@@ -86,6 +87,9 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleMobileMenu, title }) => 
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Operating Company Switcher */}
+        <CompanySwitcher />
+
         {/* Connection status indicator */}
         <div aria-live="polite" className="hidden xs:block">
           {getStatusBadge()}

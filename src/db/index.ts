@@ -14,6 +14,7 @@ import {
   Quotation,
   QuotationItem,
   TransportEntry,
+  Company,
   Bill,
   BillItem,
   OutboxItem,
@@ -47,6 +48,32 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   auto_print: true,
   print_margin_offset: 0,
 };
+
+export const DEFAULT_COMPANIES: Company[] = [
+  {
+    id: 'c1111111-1111-1111-1111-111111110001',
+    name: 'VNA TRADERS',
+    legal_name: 'VNA Traders Fireworks Depot',
+    code: 'VNA',
+    gstin: '33ACSPV5299F1Z5',
+    pan: 'ACSPV5299F',
+    phone: '+91 94431 23456',
+    email: 'vnatraders2026@gmail.com',
+    address: 'Jeermangalam, Hosur',
+    city: 'Hosur',
+    state: 'Tamil Nadu',
+    pincode: '635109',
+    bank_name: 'State Bank of India',
+    bank_account_no: '39482019482',
+    bank_ifsc: 'SBIN0001234',
+    bank_branch: 'Hosur Main Branch',
+    receipt_footer: 'Thank you for choosing VNA Traders! Wishing you a bright and safe celebration.',
+    is_active: true,
+    is_default: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
 
 export const DEFAULT_BRANDS: Brand[] = [
   {
@@ -113,6 +140,7 @@ export class CrackersBillingDB extends Dexie {
   quotations!: Table<Quotation, string>;
   quotation_items!: Table<QuotationItem, string>;
   transport_entries!: Table<TransportEntry, string>;
+  companies!: Table<Company, string>;
 
   constructor() {
     super('CrackersBillingDB');
@@ -161,6 +189,10 @@ export class CrackersBillingDB extends Dexie {
     this.version(7).stores({
       transport_entries: 'id, lr_no, transport_name, status, dispatch_date, destination, so_id, client_id, created_at',
     });
+
+    this.version(8).stores({
+      companies: 'id, code, name, gstin, is_active, is_default, created_at',
+    });
   }
 }
 
@@ -170,6 +202,15 @@ export const db = new CrackersBillingDB();
  * Initializes local database with default settings and default brands
  */
 export async function initLocalDatabase(): Promise<void> {
+  // Ensure default company exists
+  try {
+    const existingCompanies = await db.companies.toArray();
+    if (existingCompanies.length === 0) {
+      await db.companies.bulkPut(DEFAULT_COMPANIES);
+    }
+  } catch (compErr) {
+    console.warn('Companies local init note:', compErr);
+  }
   // Check settings
   const currentSettings = await db.settings.get('shop_settings');
   if (

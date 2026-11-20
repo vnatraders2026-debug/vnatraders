@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/features/auth/AuthContext';
+import { CompanyProvider } from '@/features/company/CompanyContext';
 import { ToastProvider } from '@/components/ui/Toast';
 import { AppRoutes } from '@/routes';
 
@@ -19,11 +20,13 @@ export const App: React.FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <ToastProvider>
-          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <AppRoutes />
-          </BrowserRouter>
-        </ToastProvider>
+        <CompanyProvider>
+          <ToastProvider>
+            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+              <AppRoutes />
+            </BrowserRouter>
+          </ToastProvider>
+        </CompanyProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -1,5 +1,30 @@
 export type UserRole = 'admin' | 'manager' | 'supervisor' | 'cashier' | 'staff' | 'dispatcher';
 
+export interface Company {
+  id: string;
+  name: string;
+  legal_name?: string;
+  code: string; // short prefix e.g. "VNA", "SVF"
+  gstin: string; // 15-character GSTIN
+  pan?: string;
+  phone: string;
+  email?: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  bank_name?: string;
+  bank_account_no?: string;
+  bank_ifsc?: string;
+  bank_branch?: string;
+  receipt_footer?: string;
+  logo_url?: string;
+  is_active: boolean;
+  is_default?: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface Profile {
   id: string;
   full_name: string;
@@ -94,6 +119,8 @@ export type PurchaseOrderStatus = 'draft' | 'ordered' | 'received' | 'cancelled'
 export interface PurchaseOrder {
   id: string;
   po_no: string;
+  company_id?: string;
+  company_name?: string;
   supplier_id?: string;
   supplier_name: string;
   supplier_phone?: string;
@@ -134,6 +161,8 @@ export type SaleOrderStatus = 'pending' | 'confirmed' | 'packed' | 'dispatched' 
 export interface SaleOrder {
   id: string;
   so_no: string;
+  company_id?: string;
+  company_name?: string;
   client_id?: string;
   customer_name: string;
   customer_phone?: string;
@@ -189,6 +218,8 @@ export type InvoicePaymentStatus = 'unpaid' | 'partial' | 'paid';
 export interface Invoice {
   id: string;
   invoice_no: string;
+  company_id?: string;
+  company_name?: string;
   so_id?: string; // Linked Sale Order if any
   client_id?: string;
   customer_name: string;
@@ -242,6 +273,8 @@ export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'converted' | 'exp
 export interface Quotation {
   id: string;
   quotation_no: string;
+  company_id?: string;
+  company_name?: string;
   client_id?: string;
   customer_name: string;
   customer_phone?: string;
@@ -292,6 +325,8 @@ export type PaymentMode = 'cash' | 'upi' | 'card';
 export interface Bill {
   id: string;
   bill_no: string;
+  company_id?: string;
+  company_name?: string;
   customer_name?: string | null;
   customer_phone?: string | null;
   subtotal: number;
@@ -385,7 +420,8 @@ export interface OutboxItem {
     | 'invoices'
     | 'invoice_items'
     | 'stock_movements'
-    | 'transport_entries';
+    | 'transport_entries'
+    | 'companies';
   op: 'insert' | 'update' | 'upsert' | 'delete';
   payload: any;
   status: 'pending' | 'syncing' | 'done' | 'failed';

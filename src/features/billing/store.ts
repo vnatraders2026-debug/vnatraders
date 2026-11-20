@@ -397,9 +397,25 @@ export const useCartStore = create<CartState>((set, get) => ({
     const billId = editingBillId || generateUUID();
     const billNo = isEditing && editingBillNo ? editingBillNo : await generateNextBillNo();
 
+    // Look up active company
+    let activeCompId: string | undefined;
+    let activeCompName: string | undefined;
+    try {
+      const savedActiveId = typeof localStorage !== 'undefined' ? localStorage.getItem('vna_active_company_id') : null;
+      let activeComp = savedActiveId ? await db.companies.get(savedActiveId) : undefined;
+      if (!activeComp) {
+        const allComps = await db.companies.toArray();
+        activeComp = allComps.find((c) => c.is_default && c.is_active) || allComps[0];
+      }
+      activeCompId = activeComp?.id;
+      activeCompName = activeComp?.name;
+    } catch {}
+
     const billRecord: Bill = {
       id: billId,
       bill_no: billNo,
+      company_id: activeCompId,
+      company_name: activeCompName,
       customer_name: customer_name.trim() || null,
       customer_phone: customer_phone.trim() || null,
       subtotal,

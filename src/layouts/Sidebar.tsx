@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useCompany } from '@/features/company/CompanyContext';
 import {
   LayoutDashboard,
   FilePlus2,
@@ -17,6 +18,7 @@ import {
   PackagePlus,
   FileText,
   Building2,
+  Building,
   ClipboardList,
   ClipboardCheck,
   Navigation,
@@ -32,6 +34,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent = false }) => {
   const { user, logout } = useAuth();
+  const { activeCompany } = useCompany();
   const role = user?.role || 'staff';
 
   const staffNavItems = [
@@ -78,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent
     { to: '/products', label: 'Products', icon: Boxes },
     { to: '/brands', label: 'Brands', icon: Tag },
     { to: '/clients', label: 'Clients', icon: Building2 },
+    { to: '/companies', label: 'Companies', icon: Building },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
   ];
 
@@ -95,6 +99,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent
     { to: '/products', label: 'Products', icon: Boxes },
     { to: '/brands', label: 'Brands', icon: Tag },
     { to: '/clients', label: 'Clients', icon: Building2 },
+    { to: '/companies', label: 'Companies', icon: Building },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
     { to: '/logs', label: 'Activity Logs', icon: ScrollText },
   ];
@@ -113,6 +118,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent
     { to: '/products', label: 'Products', icon: Boxes },
     { to: '/brands', label: 'Brands', icon: Tag },
     { to: '/clients', label: 'Clients', icon: Building2 },
+    { to: '/companies', label: 'Companies', icon: Building },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
     { to: '/users', label: 'Users', icon: Users2 },
     { to: '/logs', label: 'Activity Logs', icon: ScrollText },
@@ -147,6 +153,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, hidePermanent
         <span className="text-[10px] uppercase font-bold text-accent tracking-wider px-1.5 py-0.5 rounded bg-accent/10">
           {role}
         </span>
+      </div>
+
+      {/* Active Operating Company Indicator */}
+      <div className="px-3.5 py-2 bg-background/50 border-b border-border/60 flex items-center justify-between">
+        <div className="overflow-hidden pr-1">
+          <span className="text-[9px] uppercase tracking-wider font-bold text-text-muted flex items-center gap-1">
+            <Building size={10} className="text-accent" />
+            <span>Active Firm:</span>
+          </span>
+          <span className="text-xs font-bold text-text truncate block mt-0.5" title={activeCompany?.name}>
+            {activeCompany?.name || 'VNA TRADERS'}
+          </span>
+        </div>
+        {activeCompany?.code && (
+          <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-surface border border-border text-accent shrink-0">
+            {activeCompany.code}
+          </span>
+        )}
       </div>
 
       {/* Nav items */}

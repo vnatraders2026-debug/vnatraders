@@ -32,12 +32,15 @@ import {
   Truck,
   IndianRupee,
   Layers,
+  Building2,
 } from 'lucide-react';
+import { useCompany } from '@/features/company/CompanyContext';
 
 export const InvoicesPage: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
   const { toast } = useToast();
+  const { activeCompany, companies } = useCompany();
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -49,6 +52,7 @@ export const InvoicesPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [pricingFilter, setPricingFilter] = useState<string>('all');
+  const [companyFilter, setCompanyFilter] = useState<string>('all');
 
   // Create Invoice Modal State
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -544,6 +548,8 @@ export const InvoicesPage: React.FC = () => {
         customer_phone: customerPhone.trim() || undefined,
         customer_address: customerAddress.trim() || undefined,
         customer_gstin: customerGstin.trim().toUpperCase() || undefined,
+        company_id: activeCompany?.id,
+        company_name: activeCompany?.name,
         invoice_date: invoiceDate,
         due_date: dueDate || undefined,
         pricing_type: pricingType,
@@ -744,6 +750,11 @@ export const InvoicesPage: React.FC = () => {
   // Filtered List
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
+      if (companyFilter !== 'all') {
+        const isDefault = companies.find((c) => c.is_default)?.id === companyFilter;
+        const matches = inv.company_id ? inv.company_id === companyFilter : isDefault;
+        if (!matches) return false;
+      }
       if (statusFilter !== 'all' && inv.payment_status !== statusFilter) return false;
       if (pricingFilter !== 'all' && inv.pricing_type !== pricingFilter) return false;
 
@@ -757,7 +768,7 @@ export const InvoicesPage: React.FC = () => {
         (inv.lr_number && inv.lr_number.toLowerCase().includes(q))
       );
     });
-  }, [invoices, statusFilter, pricingFilter, searchQuery]);
+  }, [invoices, companyFilter, statusFilter, pricingFilter, searchQuery, companies]);
 
   // Overall Statistics
   const stats = useMemo(() => {
@@ -850,6 +861,21 @@ export const InvoicesPage: React.FC = () => {
 
           <div className="w-full sm:w-44">
             <Select
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              options={[
+                { value: 'all', label: 'All Companies' },
+                ...companies.map((c) => ({
+                  value: c.id,
+                  label: `${c.name}${c.code ? ` (${c.code})` : ''}`,
+                })),
+              ]}
+              className="text-xs"
+            />
+          </div>
+
+          <div className="w-full sm:w-40">
+            <Select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               options={[
@@ -862,7 +888,7 @@ export const InvoicesPage: React.FC = () => {
             />
           </div>
 
-          <div className="w-full sm:w-40">
+          <div className="w-full sm:w-36">
             <Select
               value={pricingFilter}
               onChange={(e) => setPricingFilter(e.target.value)}
@@ -905,6 +931,7 @@ export const InvoicesPage: React.FC = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Invoice No</TableHead>
+                  <TableHead>Company</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Customer / Consignee</TableHead>
                   <TableHead>Mode</TableHead>
@@ -924,6 +951,11 @@ export const InvoicesPage: React.FC = () => {
                     <TableRow key={inv.id} className="hover:bg-background/50">
                       <TableCell className="font-mono font-bold text-accent text-xs">
                         {inv.invoice_no}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent/10 text-accent border border-accent/20" title={inv.company_name}>
+                          {inv.company_name || companies.find((c) => c.id === inv.company_id)?.code || 'VNA'}
+                        </span>
                       </TableCell>
                       <TableCell className="text-xs text-text-muted whitespace-nowrap">
                         {formatDateDMY(inv.invoice_date)}
@@ -1032,6 +1064,22 @@ export const InvoicesPage: React.FC = () => {
         maxWidth="xl"
       >
         <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
+          {/* Operating Company Banner */}
+          <div className="bg-accent/10 border border-accent/20 rounded-md p-2.5 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <Building2 size={15} className="text-accent" />
+              <div>
+                <span className="font-bold text-text">Operating Firm: {activeCompany?.name || 'VNA TRADERS'}</span>
+                <span className="text-text-muted ml-2">GSTIN: {activeCompany?.gstin || '33ACSPV5299F1Z5'}</span>
+              </div>
+            </div>
+            {activeCompany?.code && (
+              <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-surface border text-accent text-[11px]">
+                {activeCompany.code}
+              </span>
+            )}
+          </div>
+
           {/* Quick Import Row */}
           <div className="p-3 bg-accent/5 border border-accent/20 rounded grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
             <div>
@@ -1695,6 +1743,11 @@ export const InvoicesPage: React.FC = () => {
             </div>
 
             {/* Printable Document Container */}
+            {(() => {
+              const invoiceCompany = selectedInvoice
+                ? companies.find((c) => c.id === selectedInvoice.company_id) || activeCompany
+                : activeCompany;
+              return (
             <div id="invoice-print-area" className="printable-area">
 
             {/* Standard A4 Formal Tax Invoice Template */}
@@ -1704,13 +1757,13 @@ export const InvoicesPage: React.FC = () => {
                 <div>
                   <VnaLogo size="md" />
                   <div className="font-extrabold text-base uppercase text-gray-900 mt-1">
-                    VNA TRADERS
+                    {invoiceCompany?.name || 'VNA TRADERS'}
                   </div>
                   <div className="text-[11px] text-gray-600 leading-tight">
-                    Wholesale &amp; Retail Fireworks Merchant<br />
-                    Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109<br />
-                    Phone: +91 94431 23456 / +91 94432 98765<br />
-                    <strong>GSTIN: 33ACSPV5299F1Z5</strong> • State Code: 33 (Tamil Nadu)
+                    {invoiceCompany?.legal_name || 'Wholesale & Retail Fireworks Merchant'}<br />
+                    {invoiceCompany?.address ? `${invoiceCompany.address}, ${invoiceCompany.city || 'Hosur'}, ${invoiceCompany.state || 'Tamil Nadu'} - ${invoiceCompany.pincode || '635109'}` : 'Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109'}<br />
+                    {invoiceCompany?.phone ? `Phone: ${invoiceCompany.phone}` : 'Phone: +91 94431 23456 / +91 94432 98765'}<br />
+                    <strong>GSTIN: {invoiceCompany?.gstin || '33ACSPV5299F1Z5'}</strong> • State Code: 33 ({invoiceCompany?.state || 'Tamil Nadu'})
                   </div>
                 </div>
 
@@ -1819,10 +1872,10 @@ export const InvoicesPage: React.FC = () => {
                 <div className="space-y-3">
                   <div className="p-2.5 bg-gray-50 border border-gray-300 rounded text-[11px] leading-tight space-y-1">
                     <span className="font-bold text-gray-800 uppercase block">Bank Payment Details (RTGS / NEFT / IMPS):</span>
-                    <div>Bank Name: <strong>State Bank of India (SBI)</strong></div>
-                    <div>Account Name: <strong>VNA TRADERS</strong></div>
-                    <div>Account Number: <strong className="font-mono">3948201004521</strong></div>
-                    <div>IFSC Code: <strong className="font-mono">SBIN0001234</strong> (Hosur Branch)</div>
+                    <div>Bank Name: <strong>{invoiceCompany?.bank_name || 'State Bank of India (SBI)'}</strong></div>
+                    <div>Account Name: <strong>{invoiceCompany?.legal_name || invoiceCompany?.name || 'VNA TRADERS'}</strong></div>
+                    <div>Account Number: <strong className="font-mono">{invoiceCompany?.bank_account_no || '3948201004521'}</strong></div>
+                    <div>IFSC Code: <strong className="font-mono">{invoiceCompany?.bank_ifsc || 'SBIN0001234'}</strong> {invoiceCompany?.bank_branch ? `(${invoiceCompany.bank_branch})` : '(Hosur Branch)'}</div>
                   </div>
 
                   <div className="p-2 bg-gray-50 border border-gray-300 rounded text-xs">
@@ -1905,7 +1958,7 @@ export const InvoicesPage: React.FC = () => {
                 </div>
 
                 <div className="text-right">
-                  <div className="font-bold text-xs uppercase text-gray-800">For VNA TRADERS</div>
+                  <div className="font-bold text-xs uppercase text-gray-800">For {invoiceCompany?.name || 'VNA TRADERS'}</div>
                   <div className="h-14"></div>
                   <div className="pt-2 border-t border-gray-400 font-bold text-xs text-gray-900 inline-block min-w-[180px] text-center">
                     Authorized Signatory
@@ -1914,6 +1967,8 @@ export const InvoicesPage: React.FC = () => {
               </div>
             </div>
             </div>
+              );
+            })()}
 
             <div className="flex justify-end pt-2 no-print">
               <Button variant="secondary" size="sm" onClick={() => setIsViewModalOpen(false)}>

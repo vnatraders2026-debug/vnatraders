@@ -36,13 +36,16 @@ import {
   XCircle,
   ClipboardCheck,
   Lock,
+  Building2,
 } from 'lucide-react';
+import { useCompany } from '@/features/company/CompanyContext';
 
 export const SaleOrdersPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
   const { toast } = useToast();
+  const { activeCompany, companies } = useCompany();
 
   const [orders, setOrders] = useState<SaleOrder[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -50,6 +53,7 @@ export const SaleOrdersPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [companyFilter, setCompanyFilter] = useState<string>('all');
 
   // Create Modal state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -404,6 +408,8 @@ export const SaleOrdersPage: React.FC = () => {
         customer_phone: customerPhone.trim() || undefined,
         customer_address: customerAddress.trim() || undefined,
         customer_gstin: customerGstin.trim().toUpperCase() || undefined,
+        company_id: activeCompany?.id,
+        company_name: activeCompany?.name,
         pricing_type: pricingType,
         order_date: orderDate,
         delivery_due_date: deliveryDueDate || undefined,
@@ -716,6 +722,11 @@ export const SaleOrdersPage: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
+      if (companyFilter !== 'all') {
+        const isDefault = companies.find((c) => c.is_default)?.id === companyFilter;
+        const matches = o.company_id ? o.company_id === companyFilter : isDefault;
+        if (!matches) return false;
+      }
       if (statusFilter !== 'all' && o.status !== statusFilter) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -729,7 +740,7 @@ export const SaleOrdersPage: React.FC = () => {
       }
       return true;
     });
-  }, [orders, statusFilter, searchQuery]);
+  }, [orders, companyFilter, statusFilter, searchQuery, companies]);
 
   return (
     <div className="space-y-4">
@@ -861,6 +872,20 @@ export const SaleOrdersPage: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <Select
+            value={companyFilter}
+            onChange={(e) => setCompanyFilter(e.target.value)}
+            className="text-xs min-h-[38px]"
+            title="Filter by Operating Company"
+          >
+            <option value="all">All Companies</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} {c.code ? `(${c.code})` : ''}
+              </option>
+            ))}
+          </Select>
+
+          <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="text-xs min-h-[38px]"
@@ -874,12 +899,13 @@ export const SaleOrdersPage: React.FC = () => {
             <option value="cancelled">Cancelled</option>
           </Select>
 
-          {(searchQuery || statusFilter !== 'all') && (
+          {(searchQuery || statusFilter !== 'all' || companyFilter !== 'all') && (
             <button
               type="button"
               onClick={() => {
                 setSearchQuery('');
                 setStatusFilter('all');
+                setCompanyFilter('all');
               }}
               className="text-danger hover:underline text-xs font-semibold px-2 flex items-center gap-1"
             >
@@ -892,7 +918,7 @@ export const SaleOrdersPage: React.FC = () => {
 
       {/* Sale Orders Table */}
       {loading ? (
-        <TableSkeleton rows={6} cols={8} />
+        <TableSkeleton rows={6} cols={9} />
       ) : filteredOrders.length === 0 ? (
         <EmptyState
           message="No sale orders found"
@@ -905,6 +931,7 @@ export const SaleOrdersPage: React.FC = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>SO Number</TableHead>
+                <TableHead>Company</TableHead>
                 <TableHead>Order Date</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Pricing</TableHead>
@@ -918,6 +945,11 @@ export const SaleOrdersPage: React.FC = () => {
               {filteredOrders.map((o) => (
                 <TableRow key={o.id}>
                   <TableCell className="font-mono font-bold text-accent">{o.so_no}</TableCell>
+                  <TableCell className="text-xs">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent/10 text-accent border border-accent/20" title={o.company_name}>
+                      {o.company_name || companies.find((c) => c.id === o.company_id)?.code || 'VNA'}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-xs text-text-muted whitespace-nowrap">
                     {new Date(o.order_date).toLocaleDateString('en-IN', {
                       day: '2-digit',
@@ -1047,6 +1079,22 @@ export const SaleOrdersPage: React.FC = () => {
         maxWidth="full"
       >
         <div className="space-y-4">
+          {/* Operating Company Banner */}
+          <div className="bg-accent/10 border border-accent/20 rounded-md p-2.5 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <Building2 size={15} className="text-accent" />
+              <div>
+                <span className="font-bold text-text">Operating Firm: {activeCompany?.name || 'VNA TRADERS'}</span>
+                <span className="text-text-muted ml-2">GSTIN: {activeCompany?.gstin || '33ACSPV5299F1Z5'}</span>
+              </div>
+            </div>
+            {activeCompany?.code && (
+              <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-surface border text-accent text-[11px]">
+                {activeCompany.code}
+              </span>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-text mb-1">
@@ -1646,6 +1694,11 @@ export const SaleOrdersPage: React.FC = () => {
             </div>
 
             {/* A4 PRINTABLE DOCUMENT CONTAINER */}
+            {(() => {
+              const orderCompany = selectedOrder
+                ? companies.find((c) => c.id === selectedOrder.company_id) || activeCompany
+                : activeCompany;
+              return (
             <div id="sale-order-print-area" className="printable-area">
               <div className="p-6 bg-white text-gray-900 border-2 border-gray-800 rounded-sm shadow-xs space-y-4 print:p-0 print:border-none print:shadow-none text-xs font-sans max-w-4xl mx-auto">
                 {/* Header */}
@@ -1653,13 +1706,13 @@ export const SaleOrdersPage: React.FC = () => {
                   <div>
                     <VnaLogo size="md" />
                     <div className="font-extrabold text-base uppercase text-gray-900 mt-1">
-                      VNA TRADERS
+                      {orderCompany?.name || 'VNA TRADERS'}
                     </div>
                     <div className="text-[11px] text-gray-600 leading-tight">
-                      Wholesale &amp; Retail Fireworks Merchant<br />
-                      Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109<br />
-                      Phone: +91 94431 23456 / +91 94432 98765<br />
-                      <strong>GSTIN: 33ACSPV5299F1Z5</strong> • State Code: 33 (Tamil Nadu)
+                      {orderCompany?.legal_name || 'Wholesale & Retail Fireworks Merchant'}<br />
+                      {orderCompany?.address ? `${orderCompany.address}, ${orderCompany.city || 'Hosur'}, ${orderCompany.state || 'Tamil Nadu'} - ${orderCompany.pincode || '635109'}` : 'Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109'}<br />
+                      {orderCompany?.phone ? `Phone: ${orderCompany.phone}` : 'Phone: +91 94431 23456 / +91 94432 98765'}<br />
+                      <strong>GSTIN: {orderCompany?.gstin || '33ACSPV5299F1Z5'}</strong> • State Code: 33 ({orderCompany?.state || 'Tamil Nadu'})
                     </div>
                   </div>
 
@@ -1820,10 +1873,10 @@ export const SaleOrdersPage: React.FC = () => {
 
                   <div className="p-2.5 bg-gray-50 border border-gray-300 rounded text-[11px] leading-tight space-y-1">
                     <span className="font-bold text-gray-800 uppercase block">Bank Payment Details (RTGS / NEFT / IMPS):</span>
-                    <div>Bank Name: <strong>State Bank of India (SBI)</strong></div>
-                    <div>Account Name: <strong>VNA TRADERS</strong></div>
-                    <div>Account Number: <strong className="font-mono font-bold">3948201004521</strong></div>
-                    <div>IFSC Code: <strong className="font-mono font-bold">SBIN0001234</strong> (Hosur Branch)</div>
+                    <div>Bank Name: <strong>{orderCompany?.bank_name || 'State Bank of India (SBI)'}</strong></div>
+                    <div>Account Name: <strong>{orderCompany?.legal_name || orderCompany?.name || 'VNA TRADERS'}</strong></div>
+                    <div>Account Number: <strong className="font-mono font-bold">{orderCompany?.bank_account_no || '3948201004521'}</strong></div>
+                    <div>IFSC Code: <strong className="font-mono font-bold">{orderCompany?.bank_ifsc || 'SBIN0001234'}</strong> {orderCompany?.bank_branch ? `(${orderCompany.bank_branch})` : '(Hosur Branch)'}</div>
                   </div>
                 </div>
 
@@ -1861,7 +1914,7 @@ export const SaleOrdersPage: React.FC = () => {
 
                     <div className="text-center">
                       <div className="h-14 flex items-end justify-center text-gray-400 italic text-[11px]">
-                        For <strong>VNA TRADERS</strong>
+                        For <strong>{orderCompany?.name || 'VNA TRADERS'}</strong>
                       </div>
                       <div className="border-t border-gray-800 pt-1">
                         <div className="font-bold text-gray-900 text-xs">Authorized Signatory</div>
@@ -1872,6 +1925,8 @@ export const SaleOrdersPage: React.FC = () => {
                 </div>
               </div>
             </div>
+              );
+            })()}
 
             {/* Bottom Actions */}
             <div className="flex justify-between items-center pt-3 border-t border-border no-print">
