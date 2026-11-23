@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/features/auth/AuthContext';
-import { CompanyProvider } from '@/features/company/CompanyContext';
+import { CompanyProvider } from '@/features/companies/CompanyContext';
 import { ToastProvider } from '@/components/ui/Toast';
 import { AppRoutes } from '@/routes';
 

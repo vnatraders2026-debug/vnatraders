@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { useCompany } from '@/features/company/CompanyContext';
 import { Button } from '@/components/ui/Button';
 import {
   Mail,
@@ -12,7 +11,6 @@ import {
   Zap,
   Printer,
   UserCheck,
-  Building2,
 } from 'lucide-react';
 
 import { VnaLogo } from '@/components/VnaLogo';
@@ -24,7 +22,6 @@ export const LoginPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
-  const { companies, activeCompany, setActiveCompanyId } = useCompany();
   const navigate = useNavigate();
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -90,38 +87,6 @@ export const LoginPage: React.FC = () => {
 
           {/* Standard Form */}
           <form onSubmit={handleLoginSubmit} className="space-y-4">
-            {/* Multi-Company Operating Firm Selector */}
-            {companies.length > 0 && (
-              <div className="bg-background p-2.5 rounded border border-border space-y-1">
-                <label className="block text-[11px] font-bold text-text uppercase tracking-wider flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <Building2 size={13} className="text-accent" />
-                    <span>Operating Company Firm</span>
-                  </span>
-                  <span className="text-[10px] text-text-muted font-normal">
-                    {companies.length} {companies.length === 1 ? 'Firm' : 'Firms'}
-                  </span>
-                </label>
-                <select
-                  value={activeCompany?.id || ''}
-                  onChange={(e) => setActiveCompanyId(e.target.value)}
-                  className="w-full py-1.5 px-2 text-xs bg-surface border border-border rounded font-semibold text-text focus:outline-none focus:ring-1 focus:ring-accent"
-                >
-                  {companies.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.code ? `[${c.code}]` : ''} - {c.city || 'Hosur'} (GST: {c.gstin})
-                    </option>
-                  ))}
-                </select>
-                {activeCompany && (
-                  <div className="text-[10px] text-text-muted font-mono flex items-center justify-between pt-0.5">
-                    <span>GSTIN: {activeCompany.gstin}</span>
-                    <span>Prefix: {activeCompany.code || 'VNA'}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
             <div>
               <label className="block text-xs font-medium text-text mb-1">
                 Email Address

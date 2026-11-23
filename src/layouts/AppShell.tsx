@@ -6,6 +6,7 @@ import { BottomTabs } from './BottomTabs';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { StockAlertBanner } from '@/components/StockAlertBanner';
 
 export const AppShell: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -37,6 +38,7 @@ export const AppShell: React.FC = () => {
     if (pathname.startsWith('/invoices')) return 'Tax Invoices';
     if (pathname.startsWith('/reports')) return 'Reports';
     if (pathname.startsWith('/users')) return 'Users';
+    if (pathname.startsWith('/companies')) return 'Company Management';
     if (pathname.startsWith('/logs')) return 'Activity Logs';
     if (pathname.startsWith('/settings')) return 'Settings';
     return 'VNA Traders';
@@ -88,6 +90,9 @@ export const AppShell: React.FC = () => {
           onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
           title={getPageTitle(location.pathname)}
         />
+
+        {/* Stock alerts shown after login on every page except billing POS */}
+        {!isBilling && <StockAlertBanner />}
 
         <main className={`flex-1 ${isBilling ? 'p-1 sm:p-3' : 'p-4 sm:p-6'} overflow-y-auto`}>
           <Outlet />

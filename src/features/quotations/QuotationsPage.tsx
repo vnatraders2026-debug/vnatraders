@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db, generateNextQuotationNo, generateNextSoNo, generateNextInvoiceNo } from '@/db';
+import { db, generateNextQuotationNo, generateNextSoNo, generateNextInvoiceNo, DEFAULT_COMPANY_ID } from '@/db';
+import { useCompany } from '@/features/companies/CompanyContext';
 import { syncService } from '@/sync/syncService';
 import {
   Quotation,
@@ -40,15 +41,14 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  AlertTriangle,
   Trash2,
   RotateCcw,
   Send,
   Layers,
   CheckCheck,
   Edit3,
-  Building2,
 } from 'lucide-react';
-import { useCompany } from '@/features/company/CompanyContext';
 
 export const DEFAULT_QUOTATION_TERMS = [
   '1. Price Validity: Rates quoted are strictly valid for 7 days or until the validity date indicated, subject to festival raw material market fluctuations.',
@@ -62,9 +62,9 @@ export const DEFAULT_QUOTATION_TERMS = [
 
 export const QuotationsPage: React.FC = () => {
   const { user } = useAuth();
+  const { activeCompany, activeCompanyId, isAllCompanies, companies } = useCompany();
   const isAdminOrManager = user?.role === 'admin' || user?.role === 'manager';
   const { toast } = useToast();
-  const { activeCompany, companies } = useCompany();
 
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -74,7 +74,6 @@ export const QuotationsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [pricingFilter, setPricingFilter] = useState<string>('all');
-  const [companyFilter, setCompanyFilter] = useState<string>('all');
 
   // Create / Edit Modal State
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -505,13 +504,12 @@ export const QuotationsPage: React.FC = () => {
       const quoteRecord: Quotation = {
         id: quoteId,
         quotation_no: quoteNo,
+        company_id: activeCompanyId || DEFAULT_COMPANY_ID,
         client_id: selectedClientId || undefined,
         customer_name: customerName.trim(),
         customer_phone: customerPhone.trim() || undefined,
         customer_address: customerAddress.trim() || undefined,
         customer_gstin: customerGstin.trim().toUpperCase() || undefined,
-        company_id: activeCompany?.id,
-        company_name: activeCompany?.name,
         pricing_type: pricingType,
         quotation_date: quotationDate,
         valid_until: validUntil,
@@ -680,8 +678,6 @@ export const QuotationsPage: React.FC = () => {
         customer_phone: quote.customer_phone,
         customer_address: quote.customer_address,
         customer_gstin: quote.customer_gstin,
-        company_id: quote.company_id || activeCompany?.id,
-        company_name: quote.company_name || activeCompany?.name,
         pricing_type: quote.pricing_type,
         order_date: new Date().toISOString().slice(0, 10),
         delivery_due_date: quote.valid_until,
@@ -786,8 +782,6 @@ export const QuotationsPage: React.FC = () => {
         customer_phone: quote.customer_phone,
         customer_address: quote.customer_address,
         customer_gstin: quote.customer_gstin,
-        company_id: quote.company_id || activeCompany?.id,
-        company_name: quote.company_name || activeCompany?.name,
         invoice_date: new Date().toISOString().slice(0, 10),
         due_date: quote.valid_until,
         pricing_type: quote.pricing_type,
@@ -914,11 +908,12 @@ export const QuotationsPage: React.FC = () => {
   const filteredQuotations = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
     return quotations.filter((q) => {
-      if (companyFilter !== 'all') {
-        const isDefault = companies.find((c) => c.is_default)?.id === companyFilter;
-        const matches = q.company_id ? q.company_id === companyFilter : isDefault;
-        if (!matches) return false;
-      }
+      // 0. Company isolation filter
+      const matchesCompany =
+        isAllCompanies ||
+        q.company_id === activeCompanyId ||
+        (!q.company_id && activeCompanyId === DEFAULT_COMPANY_ID);
+      if (!matchesCompany) return false;
 
       const qStatus = q.status === 'sent' && q.valid_until < todayStr ? 'expired' : q.status;
 
@@ -948,7 +943,7 @@ export const QuotationsPage: React.FC = () => {
 
       return true;
     });
-  }, [quotations, companyFilter, statusFilter, pricingFilter, searchQuery, companies]);
+  }, [quotations, statusFilter, pricingFilter, searchQuery]);
 
   // Metrics Bar
   const stats = useMemo(() => {
@@ -1077,21 +1072,6 @@ export const QuotationsPage: React.FC = () => {
 
           <div className="w-full sm:w-44">
             <Select
-              value={companyFilter}
-              onChange={(e) => setCompanyFilter(e.target.value)}
-              options={[
-                { value: 'all', label: 'All Companies' },
-                ...companies.map((c) => ({
-                  value: c.id,
-                  label: `${c.name}${c.code ? ` (${c.code})` : ''}`,
-                })),
-              ]}
-              className="text-xs"
-            />
-          </div>
-
-          <div className="w-full sm:w-40">
-            <Select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               options={[
@@ -1107,7 +1087,7 @@ export const QuotationsPage: React.FC = () => {
             />
           </div>
 
-          <div className="w-full sm:w-36">
+          <div className="w-full sm:w-40">
             <Select
               value={pricingFilter}
               onChange={(e) => setPricingFilter(e.target.value)}
@@ -1143,7 +1123,6 @@ export const QuotationsPage: React.FC = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Quote No</TableHead>
-                  <TableHead>Company</TableHead>
                   <TableHead>Date &amp; Validity</TableHead>
                   <TableHead>Customer / Buyer</TableHead>
                   <TableHead>Rate Mode</TableHead>
@@ -1171,11 +1150,6 @@ export const QuotationsPage: React.FC = () => {
                         </button>
                         <span className="text-[10px] text-text-muted font-normal block">
                           By: {q.created_by}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent/10 text-accent border border-accent/20" title={q.company_name}>
-                          {q.company_name || companies.find((c) => c.id === q.company_id)?.code || 'VNA'}
                         </span>
                       </TableCell>
 
@@ -1337,22 +1311,6 @@ export const QuotationsPage: React.FC = () => {
         maxWidth="xl"
       >
         <div className="space-y-4 max-h-[82vh] overflow-y-auto pr-1">
-          {/* Operating Company Banner */}
-          <div className="bg-accent/10 border border-accent/20 rounded-md p-2.5 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <Building2 size={15} className="text-accent" />
-              <div>
-                <span className="font-bold text-text">Operating Firm: {activeCompany?.name || 'VNA TRADERS'}</span>
-                <span className="text-text-muted ml-2">GSTIN: {activeCompany?.gstin || '33ACSPV5299F1Z5'}</span>
-              </div>
-            </div>
-            {activeCompany?.code && (
-              <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-surface border text-accent text-[11px]">
-                {activeCompany.code}
-              </span>
-            )}
-          </div>
-
           {/* Header row: Number, Date, Validity */}
           <div className="p-3 bg-surface border border-border rounded grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             <div>
@@ -1592,6 +1550,7 @@ export const QuotationsPage: React.FC = () => {
                       <th className="p-2 text-right w-24">Rate (₹)</th>
                       <th className="p-2 text-right w-16">Disc %</th>
                       <th className="p-2 text-right w-24">Taxable (₹)</th>
+                      <th className="p-2 text-center w-32">Stock Status</th>
                       <th className="p-2 text-center w-10"></th>
                     </tr>
                   </thead>
@@ -1727,6 +1686,78 @@ export const QuotationsPage: React.FC = () => {
                         </td>
                         <td className="p-2 text-right font-mono font-bold text-text">
                           {formatINR(item.taxable_value)}
+                        </td>
+                        <td className="p-2 text-center align-top pt-2">
+                          {(() => {
+                            if (!item.product_id) {
+                              return (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-surface border border-border text-text-muted">
+                                  Custom
+                                </span>
+                              );
+                            }
+                            const prod = products.find((p) => p.id === item.product_id);
+                            if (!prod) return <span className="text-text-muted text-xs font-mono">-</span>;
+                            const stock = prod.stock ?? 0;
+                            const minStock = prod.min_stock ?? 20;
+                            const isZero = stock === 0;
+                            const isShortage = item.qty > stock;
+                            const isLow = stock > 0 && stock <= minStock;
+
+                            if (isZero) {
+                              return (
+                                <div className="flex flex-col items-center justify-center space-y-0.5">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-red-600 text-white shadow-sm stock-blink-danger">
+                                    <AlertCircle size={11} className="shrink-0" />
+                                    0 Stock
+                                  </span>
+                                  <span className="text-[9px] font-bold text-red-600 uppercase tracking-tight stock-blink-danger">
+                                    Out of Stock
+                                  </span>
+                                </div>
+                              );
+                            }
+                            if (isShortage) {
+                              return (
+                                <div className="flex flex-col items-center justify-center space-y-0.5">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-white shadow-sm stock-blink-warning">
+                                    <AlertTriangle size={11} className="shrink-0" />
+                                    Avl: {stock}
+                                  </span>
+                                  <span className="text-[9px] font-black text-red-600 uppercase tracking-tight stock-blink-danger">
+                                    Short: -{item.qty - stock}
+                                  </span>
+                                </div>
+                              );
+                            }
+                            if (isLow) {
+                              return (
+                                <div className="flex flex-col items-center justify-center space-y-0.5">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/15 border border-amber-500/50 text-amber-700 dark:text-amber-300 stock-blink-warning">
+                                    <AlertTriangle size={11} className="shrink-0" />
+                                    {stock} {item.unit}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-amber-600 stock-blink-warning">
+                                    Low Stock
+                                  </span>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="flex flex-col items-center justify-center space-y-0.5">
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 font-mono">
+                                  <span className="relative flex h-1.5 w-1.5">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                  </span>
+                                  {stock} {item.unit}
+                                </span>
+                                <span className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                  In Stock
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="p-2 text-center">
                           <button
@@ -1898,7 +1929,10 @@ export const QuotationsPage: React.FC = () => {
       </Dialog>
 
       {/* VIEW & PRINT FORMAL A4 MODAL */}
-      {selectedQuote && (
+      {selectedQuote && (() => {
+        const docCompany = (selectedQuote.company_id && companies.find((c) => c.id === selectedQuote.company_id)) || activeCompany;
+
+        return (
         <Dialog
           isOpen={isViewModalOpen}
           onClose={() => setIsViewModalOpen(false)}
@@ -1983,11 +2017,6 @@ export const QuotationsPage: React.FC = () => {
             </div>
 
             {/* Printable Document Container */}
-            {(() => {
-              const quoteCompany = selectedQuote
-                ? companies.find((c) => c.id === selectedQuote.company_id) || activeCompany
-                : activeCompany;
-              return (
             <div id="quotation-print-area" className="printable-area">
               <div className="p-4 bg-white text-gray-900 border border-gray-300 rounded shadow-xs space-y-4 print:p-0 print:border-none print:shadow-none text-xs">
                 {/* Header Section */}
@@ -1995,13 +2024,13 @@ export const QuotationsPage: React.FC = () => {
                   <div>
                     <VnaLogo size="md" />
                     <div className="font-extrabold text-base uppercase text-gray-900 mt-1">
-                      {quoteCompany?.name || 'VNA TRADERS'}
+                      {docCompany?.name || 'VNA TRADERS'}
                     </div>
                     <div className="text-[11px] text-gray-600 leading-tight">
-                      {quoteCompany?.legal_name || 'Wholesale & Retail Fireworks Merchant'}<br />
-                      {quoteCompany?.address ? `${quoteCompany.address}, ${quoteCompany.city || 'Hosur'}, ${quoteCompany.state || 'Tamil Nadu'} - ${quoteCompany.pincode || '635109'}` : 'Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109'}<br />
-                      {quoteCompany?.phone ? `Phone: ${quoteCompany.phone}` : 'Phone: +91 94431 23456 / +91 94432 98765'}<br />
-                      <strong>GSTIN: {quoteCompany?.gstin || '33ACSPV5299F1Z5'}</strong> • State Code: 33 ({quoteCompany?.state || 'Tamil Nadu'})
+                      {docCompany?.trade_name || 'Wholesale & Retail Fireworks Merchant'}<br />
+                      {docCompany?.address ? `${docCompany.address}, ${docCompany.city || 'Hosur'}${docCompany.pincode ? ` - ${docCompany.pincode}` : ''}` : 'Jeermangalam, Hosur, Tamil Nadu - 635109'}<br />
+                      Phone: {docCompany?.phone || '+91 94431 23456'}<br />
+                      <strong>GSTIN: {docCompany?.gstin || '33ACSPV5299F1Z5'}</strong> • State Code: {docCompany?.state_code || '33'} ({docCompany?.state || 'Tamil Nadu'})
                     </div>
                   </div>
 
@@ -2116,10 +2145,10 @@ export const QuotationsPage: React.FC = () => {
                         <span className="font-bold text-gray-800 uppercase block">
                           Bank Details for Advance Booking / Payment:
                         </span>
-                        <div>Bank Name: <strong>{quoteCompany?.bank_name || 'State Bank of India (SBI)'}</strong></div>
-                        <div>Account Name: <strong>{quoteCompany?.legal_name || quoteCompany?.name || 'VNA TRADERS'}</strong></div>
-                        <div>Account Number: <strong className="font-mono">{quoteCompany?.bank_account_no || '3948201004521'}</strong></div>
-                        <div>IFSC Code: <strong className="font-mono">{quoteCompany?.bank_ifsc || 'SBIN0001234'}</strong> {quoteCompany?.bank_branch ? `(${quoteCompany.bank_branch})` : '(Hosur Branch)'}</div>
+                        <div>Bank Name: <strong>{docCompany?.bank_name || 'State Bank of India (SBI)'}</strong></div>
+                        <div>Account Name: <strong>{docCompany?.name || 'VNA TRADERS'}</strong></div>
+                        <div>Account Number: <strong className="font-mono">{docCompany?.bank_account_no || '3948201004521'}</strong></div>
+                        <div>IFSC Code: <strong className="font-mono">{docCompany?.bank_ifsc || 'SBIN0001234'}</strong> ({docCompany?.bank_branch || 'Hosur Branch'})</div>
                         <div className="text-gray-500 italic mt-0.5">
                           Kindly share transaction UTR / receipt after transfer.
                         </div>
@@ -2222,17 +2251,16 @@ export const QuotationsPage: React.FC = () => {
 
                   <div>
                     <div className="h-10 border-b border-gray-400"></div>
-                    <div className="font-bold text-gray-800 mt-1">For {quoteCompany?.name || 'VNA TRADERS'}</div>
+                    <div className="font-bold text-gray-800 mt-1">For {docCompany?.name || 'VNA TRADERS'}</div>
                     <div className="text-[10px] text-gray-500">Authorized Signatory</div>
                   </div>
                 </div>
               </div>
             </div>
-              );
-            })()}
           </div>
         </Dialog>
-      )}
+        );
+      })()}
 
       {/* QUICK CREATE PRODUCT MODAL */}
       <QuickProductModal

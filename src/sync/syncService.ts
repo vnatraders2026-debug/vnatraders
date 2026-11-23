@@ -836,39 +836,6 @@ class SyncService {
         console.warn('Transport entry sync notice:', err?.message);
         throw err;
       }
-    } else if (item.entity === 'companies') {
-      const comp = item.payload;
-      try {
-        if (item.op === 'delete') {
-          await supabase.from('companies').delete().eq('id', comp.id);
-        } else {
-          await supabase.from('companies').upsert({
-            id: comp.id,
-            name: comp.name,
-            legal_name: comp.legal_name || null,
-            code: comp.code || null,
-            gstin: comp.gstin,
-            pan: comp.pan || null,
-            phone: comp.phone,
-            email: comp.email || null,
-            address: comp.address,
-            city: comp.city || null,
-            state: comp.state || null,
-            pincode: comp.pincode || null,
-            bank_name: comp.bank_name || null,
-            bank_account_no: comp.bank_account_no || null,
-            bank_ifsc: comp.bank_ifsc || null,
-            bank_branch: comp.bank_branch || null,
-            receipt_footer: comp.receipt_footer || null,
-            is_active: comp.is_active ?? true,
-            is_default: comp.is_default ?? false,
-            created_at: comp.created_at || new Date().toISOString(),
-            updated_at: comp.updated_at || new Date().toISOString(),
-          });
-        }
-      } catch (err: any) {
-        console.warn('Companies cloud sync notice:', err?.message);
-      }
     }
   }
 

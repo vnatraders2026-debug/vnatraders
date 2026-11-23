@@ -6,9 +6,9 @@ import { useToast } from '@/components/ui/Toast';
 import { PlusCircle, Menu, RefreshCw, Maximize, Minimize, DownloadCloud } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { forceAppUpdate } from '@/lib/appUpdate';
-import { CompanySwitcher } from '@/components/CompanySwitcher';
 
 import { VnaLogo } from '@/components/VnaLogo';
+import { CompanySwitcher } from '@/components/CompanySwitcher';
 
 interface TopBarProps {
   onToggleMobileMenu: () => void;
@@ -87,7 +87,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleMobileMenu, title }) => 
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Operating Company Switcher */}
+        {/* Company Workspace Switcher */}
         <CompanySwitcher />
 
         {/* Connection status indicator */}

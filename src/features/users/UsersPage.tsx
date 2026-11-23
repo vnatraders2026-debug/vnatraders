@@ -10,13 +10,15 @@ import { Select } from '@/components/ui/Select';
 import { Dialog } from '@/components/ui/Dialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
-import { UserPlus, KeyRound, Shield, EyeOff, Eye, Edit3 } from 'lucide-react';
+import { UserPlus, KeyRound, Shield, EyeOff, Eye, Edit3, Building2 } from 'lucide-react';
 import { supabase, isConfigured } from '@/lib/supabase';
 import { generateUUID } from '@/lib/uuid';
+import { useCompany } from '@/features/companies/CompanyContext';
 
 export const UsersPage: React.FC = () => {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
+  const { companies } = useCompany();
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +30,7 @@ export const UsersPage: React.FC = () => {
     email: '',
     password: '',
     role: 'staff' as UserRole,
+    company_id: '',
   });
 
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
@@ -37,6 +40,7 @@ export const UsersPage: React.FC = () => {
     role: 'staff' as UserRole,
     is_active: true,
     new_password: '',
+    company_id: '',
   });
 
   const [resetPwdUser, setResetPwdUser] = useState<Profile | null>(null);
@@ -106,11 +110,14 @@ export const UsersPage: React.FC = () => {
       }
     }
 
+    const matchedCompany = companies.find((c) => c.id === createData.company_id);
     const newProfile: Profile = {
       id: assignedId,
       full_name: cleanName,
       email: cleanEmail,
       role: createData.role,
+      company_id: createData.company_id || undefined,
+      company_name: matchedCompany?.name || undefined,
       is_active: true,
       created_at: new Date().toISOString(),
     };
@@ -124,13 +131,13 @@ export const UsersPage: React.FC = () => {
       action: 'INSERT',
       entity: 'profiles',
       entity_id: newProfile.id,
-      summary: `Created user ${newProfile.full_name} (${newProfile.role})`,
+      summary: `Created user ${newProfile.full_name} (${newProfile.role}${newProfile.company_name ? ` - ${newProfile.company_name}` : ''})`,
       created_at: new Date().toISOString(),
     });
 
     toast(`Successfully created user ${newProfile.full_name} in database`, 'success');
     setIsCreateOpen(false);
-    setCreateData({ full_name: '', email: '', password: '', role: 'staff' });
+    setCreateData({ full_name: '', email: '', password: '', role: 'staff', company_id: '' });
     loadProfiles();
   };
 
@@ -143,6 +150,7 @@ export const UsersPage: React.FC = () => {
       role: p.role,
       is_active: p.is_active,
       new_password: '',
+      company_id: p.company_id || '',
     });
   };
 
@@ -167,6 +175,7 @@ export const UsersPage: React.FC = () => {
 
     const cleanEmail = editFormData.email.trim().toLowerCase() || editingUser.email;
     const cleanName = editFormData.full_name.trim();
+    const matchedCompany = companies.find((c) => c.id === editFormData.company_id);
 
     const updatedProfile: Profile = {
       ...editingUser,
@@ -174,6 +183,8 @@ export const UsersPage: React.FC = () => {
       email: cleanEmail,
       role: editFormData.role,
       is_active: editFormData.is_active,
+      company_id: editFormData.company_id || undefined,
+      company_name: matchedCompany?.name || undefined,
     };
 
     if (isConfigured && navigator.onLine) {
@@ -346,6 +357,7 @@ export const UsersPage: React.FC = () => {
               <TableHead>Full Name</TableHead>
               <TableHead>Email Address</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Assigned Company</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Joined</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -386,6 +398,18 @@ export const UsersPage: React.FC = () => {
                     >
                       {p.role}
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    {p.company_name ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-accent/10 text-accent border border-accent/20">
+                        <Building2 size={11} />
+                        <span>{p.company_name}</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-text-muted font-medium italic">
+                        All Companies (Global)
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <span
@@ -514,6 +538,26 @@ export const UsersPage: React.FC = () => {
             <option value="staff">Staff (Standard Billing & Products)</option>
           </Select>
 
+          <div>
+            <label className="block text-xs font-semibold text-text mb-1">
+              Assigned Company Workspace
+            </label>
+            <Select
+              value={createData.company_id}
+              onChange={(e) => setCreateData({ ...createData, company_id: e.target.value })}
+            >
+              <option value="">-- All Companies (Super Admin / Global Access) --</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.city ? `(${c.city})` : ''}
+                </option>
+              ))}
+            </Select>
+            <p className="text-[11px] text-text-muted mt-1">
+              When set, this user's login will strictly open their company's stock, bills &amp; orders.
+            </p>
+          </div>
+
           <div className="flex justify-end gap-2 pt-3 border-t border-border">
             <Button type="button" variant="secondary" onClick={() => setIsCreateOpen(false)}>
               Cancel
@@ -570,6 +614,23 @@ export const UsersPage: React.FC = () => {
                 * You cannot change your own admin role.
               </p>
             )}
+
+            <div>
+              <label className="block text-xs font-semibold text-text mb-1">
+                Assigned Company Workspace
+              </label>
+              <Select
+                value={editFormData.company_id}
+                onChange={(e) => setEditFormData({ ...editFormData, company_id: e.target.value })}
+              >
+                <option value="">-- All Companies (Super Admin / Global Access) --</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.city ? `(${c.city})` : ''}
+                  </option>
+                ))}
+              </Select>
+            </div>
 
             <div className="flex items-center gap-2 pt-1">
               <input

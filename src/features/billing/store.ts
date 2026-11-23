@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Product, PaymentMode, Bill, BillItem, OutboxItem, Profile, Brand } from '@/types';
 import { calculateBillTotals, BillTotalsResult, consolidateBillItems } from '@/lib/format';
-import { db, generateNextBillNo } from '@/db';
+import { db, generateNextBillNo, DEFAULT_COMPANY_ID } from '@/db';
 import { syncService } from '@/sync/syncService';
 import { generateUUID } from '@/lib/uuid';
 import { logActivity } from '@/lib/activityLogger';
@@ -55,7 +55,7 @@ interface CartState {
   getTotals: () => BillTotalsResult;
 
   // Save bill
-  saveBill: (currentUser: Profile) => Promise<{ bill: Bill; items: BillItem[] }>;
+  saveBill: (currentUser: Profile, companyId?: string) => Promise<{ bill: Bill; items: BillItem[] }>;
 }
 
 const CRACKER_CATEGORIES_LOWER = new Set([
@@ -367,7 +367,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     return calculateBillTotals(items, discount_percent, brand_discounts);
   },
 
-  saveBill: async (currentUser: Profile) => {
+  saveBill: async (currentUser: Profile, companyId?: string) => {
     const {
       items,
       customer_name,
@@ -384,6 +384,18 @@ export const useCartStore = create<CartState>((set, get) => ({
       throw new Error('Cannot save an empty bill. Add at least one item.');
     }
 
+    // Determine target operating company
+    let effectiveCompanyId = companyId || currentUser.company_id;
+    if (!effectiveCompanyId && typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('vna_active_company_id');
+      if (stored && stored !== '__all__') {
+        effectiveCompanyId = stored;
+      }
+    }
+    if (!effectiveCompanyId) {
+      effectiveCompanyId = DEFAULT_COMPANY_ID;
+    }
+
     // For non-admin (staff, cashier, etc.), strictly enforce that brand discounts match Admin defaults
     let effectiveBrandDiscounts = { ...brand_discounts };
     if (currentUser.role !== 'admin') {
@@ -397,25 +409,10 @@ export const useCartStore = create<CartState>((set, get) => ({
     const billId = editingBillId || generateUUID();
     const billNo = isEditing && editingBillNo ? editingBillNo : await generateNextBillNo();
 
-    // Look up active company
-    let activeCompId: string | undefined;
-    let activeCompName: string | undefined;
-    try {
-      const savedActiveId = typeof localStorage !== 'undefined' ? localStorage.getItem('vna_active_company_id') : null;
-      let activeComp = savedActiveId ? await db.companies.get(savedActiveId) : undefined;
-      if (!activeComp) {
-        const allComps = await db.companies.toArray();
-        activeComp = allComps.find((c) => c.is_default && c.is_active) || allComps[0];
-      }
-      activeCompId = activeComp?.id;
-      activeCompName = activeComp?.name;
-    } catch {}
-
     const billRecord: Bill = {
       id: billId,
       bill_no: billNo,
-      company_id: activeCompId,
-      company_name: activeCompName,
+      company_id: effectiveCompanyId,
       customer_name: customer_name.trim() || null,
       customer_phone: customer_phone.trim() || null,
       subtotal,
@@ -513,6 +510,7 @@ export const useCartStore = create<CartState>((set, get) => ({
               product_code: prod.code,
               product_name: prod.name,
               brand: prod.brand,
+              company_id: effectiveCompanyId,
               type: 'sale',
               qty: -item.qty,
               prev_stock: prod.stock,

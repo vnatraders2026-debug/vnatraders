@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useCompany } from '@/features/companies/CompanyContext';
 import { useCartStore } from '@/features/billing/store';
-import { db, getShopSettings, restoreMissingBills } from '@/db';
+import { db, getShopSettings, restoreMissingBills, DEFAULT_COMPANY_ID } from '@/db';
 import { Bill, BillItem, Profile, ShopSettings, PaymentMode } from '@/types';
 import { formatINR, formatISTDate, consolidateBillItems } from '@/lib/format';
 import { checkBillEditPermission } from '@/lib/permissions';
@@ -20,13 +21,12 @@ import { Search, Eye, Edit3, Printer, MessageSquare, RefreshCw } from 'lucide-re
 import { syncService } from '@/sync/syncService';
 import { supabase, isConfigured } from '@/lib/supabase';
 import { generateUUID } from '@/lib/uuid';
-import { useCompany } from '@/features/company/CompanyContext';
 
 export const BillsPage: React.FC = () => {
   const { user } = useAuth();
+  const { activeCompany, activeCompanyId, isAllCompanies, companies } = useCompany();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { activeCompany, companies } = useCompany();
 
   const [bills, setBills] = useState<Bill[]>([]);
   const [profiles, setProfiles] = useState<Map<string, Profile>>(new Map());
@@ -35,7 +35,6 @@ export const BillsPage: React.FC = () => {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterCompany, setFilterCompany] = useState<string>('all');
   const [filterPaymentMode, setFilterPaymentMode] = useState<string>('all');
   const [filterStaff, setFilterStaff] = useState<string>('all');
   const [dateRange, setDateRange] = useState<string>('all');
@@ -146,6 +145,13 @@ export const BillsPage: React.FC = () => {
   // Filtered bills
   const filteredBills = useMemo(() => {
     return bills.filter((b) => {
+      // 0. Company isolation filter
+      const matchesCompany =
+        isAllCompanies ||
+        b.company_id === activeCompanyId ||
+        (!b.company_id && activeCompanyId === DEFAULT_COMPANY_ID);
+      if (!matchesCompany) return false;
+
       // Search query (bill no, customer name, phone)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -153,13 +159,6 @@ export const BillsPage: React.FC = () => {
         const matchesName = b.customer_name?.toLowerCase().includes(q);
         const matchesPhone = b.customer_phone?.toLowerCase().includes(q);
         if (!matchesNo && !matchesName && !matchesPhone) return false;
-      }
-
-      // Company filter
-      if (filterCompany !== 'all') {
-        const isDefault = companies.find((c) => c.is_default)?.id === filterCompany;
-        const matches = b.company_id ? b.company_id === filterCompany : isDefault;
-        if (!matches) return false;
       }
 
       // Payment mode filter
@@ -189,26 +188,7 @@ export const BillsPage: React.FC = () => {
 
       return true;
     });
-  }, [bills, searchQuery, filterCompany, filterPaymentMode, filterStaff, dateRange, companies]);
-
-  const getEffectiveBillSettings = (bill: Bill | null): ShopSettings | undefined => {
-    if (!bill) return shopSettings || undefined;
-    const billComp = companies.find((c) => c.id === bill.company_id) || activeCompany;
-    if (!billComp) return shopSettings || undefined;
-    return {
-      shop_name: billComp.name || shopSettings?.shop_name || 'VNA TRADERS',
-      gst_no: billComp.gstin || shopSettings?.gst_no || '',
-      shop_address: billComp.address
-        ? `${billComp.address}, ${billComp.city || ''} ${billComp.pincode || ''}`.trim()
-        : shopSettings?.shop_address || '',
-      shop_phone: billComp.phone || shopSettings?.shop_phone || '',
-      receipt_footer: billComp.receipt_footer || shopSettings?.receipt_footer || '',
-      device_code: shopSettings?.device_code || 'POS-01',
-      paper_size: shopSettings?.paper_size || '80mm',
-      auto_print: shopSettings?.auto_print,
-      print_margin_offset: shopSettings?.print_margin_offset,
-    };
-  };
+  }, [bills, searchQuery, filterPaymentMode, filterStaff, dateRange]);
 
   const getBillItems = async (bill: Bill): Promise<BillItem[]> => {
     let rawItems: BillItem[] = [];
@@ -385,21 +365,7 @@ export const BillsPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1 md:w-auto">
-            <Select
-              value={filterCompany}
-              onChange={(e) => setFilterCompany(e.target.value)}
-              className="text-xs min-h-[40px]"
-              title="Filter by Operating Company"
-            >
-              <option value="all">All Companies</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.code ? `(${c.code})` : ''}
-                </option>
-              ))}
-            </Select>
-
+          <div className="grid grid-cols-3 gap-2 flex-1 md:w-auto">
             <Select
               value={filterPaymentMode}
               onChange={(e) => setFilterPaymentMode(e.target.value)}
@@ -467,7 +433,6 @@ export const BillsPage: React.FC = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Bill No</TableHead>
-                  <TableHead>Company</TableHead>
                   <TableHead>Date & Time</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead className="text-right">Total (₹)</TableHead>
@@ -481,18 +446,11 @@ export const BillsPage: React.FC = () => {
                 {filteredBills.map((b) => {
                   const staff = profiles.get(b.created_by);
                   const editPermission = checkBillEditPermission(b, user, currentTimeMs);
-                  const compName = b.company_name || companies.find((c) => c.id === b.company_id)?.name || 'VNA TRADERS';
-                  const compCode = companies.find((c) => c.id === b.company_id)?.code;
 
                   return (
                     <TableRow key={b.id}>
                       <TableCell className="font-mono font-semibold text-accent">
                         {b.bill_no}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent/10 text-accent border border-accent/20" title={compName}>
-                          {compCode || compName}
-                        </span>
                       </TableCell>
                       <TableCell className="text-xs text-text-muted">
                         {formatISTDate(b.created_at)}
@@ -606,12 +564,9 @@ export const BillsPage: React.FC = () => {
                     title="Tap to view bill details"
                   >
                     <div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1.5">
                         <span className="font-mono font-bold text-accent text-sm group-hover:underline">
                           {b.bill_no}
-                        </span>
-                        <span className="inline-block px-1.5 py-0.2 text-[10px] font-semibold rounded bg-accent/10 text-accent border border-accent/20">
-                          {b.company_name || companies.find((c) => c.id === b.company_id)?.code || 'VNA'}
                         </span>
                         <span
                           className={`inline-block px-1.5 py-0.2 text-[10px] font-semibold rounded ${
@@ -846,30 +801,44 @@ export const BillsPage: React.FC = () => {
       )}
 
       {/* REPRINT RECEIPT MODAL */}
-      {viewingBill && !isDetailModalOpen && shopSettings && user && (
-        <ReceiptModal
-          bill={viewingBill.bill}
-          items={viewingBill.items}
-          settings={getEffectiveBillSettings(viewingBill.bill) || shopSettings}
-          currentUser={user}
-          billedBy={
-            viewingBill.bill.created_by
-              ? profiles.get(viewingBill.bill.created_by)?.full_name ||
-                profiles.get(viewingBill.bill.created_by)?.email ||
-                (viewingBill.bill.created_by === user.id ? user.full_name || user.email : 'Staff')
-              : user.full_name || user.email || 'Admin'
-          }
-          onNewBill={() => {
-            setViewingBill(null);
-            navigate('/billing');
-          }}
-          onEditBill={() => {
-            handleEditBill(viewingBill.bill);
-            setViewingBill(null);
-          }}
-          onClose={() => setViewingBill(null)}
-        />
-      )}
+      {viewingBill && !isDetailModalOpen && shopSettings && user && (() => {
+        const billComp = (viewingBill.bill.company_id && companies.find((c) => c.id === viewingBill.bill.company_id)) || activeCompany;
+        const effectivePrintSettings: ShopSettings = billComp ? {
+          ...shopSettings,
+          shop_name: billComp.name || shopSettings.shop_name,
+          gst_no: billComp.gstin || shopSettings.gst_no,
+          shop_phone: billComp.phone || shopSettings.shop_phone,
+          shop_address: billComp.address
+            ? `${billComp.address}${billComp.city ? `, ${billComp.city}` : ''}${billComp.pincode ? ` - ${billComp.pincode}` : ''}`
+            : shopSettings.shop_address,
+          receipt_footer: billComp.receipt_footer || shopSettings.receipt_footer,
+        } : shopSettings;
+
+        return (
+          <ReceiptModal
+            bill={viewingBill.bill}
+            items={viewingBill.items}
+            settings={effectivePrintSettings}
+            currentUser={user}
+            billedBy={
+              viewingBill.bill.created_by
+                ? profiles.get(viewingBill.bill.created_by)?.full_name ||
+                  profiles.get(viewingBill.bill.created_by)?.email ||
+                  (viewingBill.bill.created_by === user.id ? user.full_name || user.email : 'Staff')
+                : user.full_name || user.email || 'Admin'
+            }
+            onNewBill={() => {
+              setViewingBill(null);
+              navigate('/billing');
+            }}
+            onEditBill={() => {
+              handleEditBill(viewingBill.bill);
+              setViewingBill(null);
+            }}
+            onClose={() => setViewingBill(null)}
+          />
+        );
+      })()}
 
       {/* WHATSAPP BILL SHARE MODAL */}
       {isWhatsAppOpen && whatsAppBill && (
@@ -880,7 +849,7 @@ export const BillsPage: React.FC = () => {
             setWhatsAppBill(null);
           }}
           bill={whatsAppBill}
-          settings={getEffectiveBillSettings(whatsAppBill) || shopSettings || undefined}
+          settings={shopSettings || undefined}
         />
       )}
     </div>

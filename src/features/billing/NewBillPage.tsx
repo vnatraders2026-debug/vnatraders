@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '@/features/auth/AuthContext';
-import { useCompany } from '@/features/company/CompanyContext';
+import { useCompany } from '@/features/companies/CompanyContext';
 import { useCartStore, CartItem } from './store';
-import { db, getShopSettings, initLocalDatabase } from '@/db';
+import { db, getShopSettings, initLocalDatabase, DEFAULT_COMPANY_ID } from '@/db';
 import { searchProducts, createProductSearchIndex } from '@/db/search';
 import { Product, ShopSettings, PaymentMode, Bill, BillItem, Brand } from '@/types';
 import { formatINR, BrandTotalBreakdown } from '@/lib/format';
@@ -82,7 +82,7 @@ export const NewBillPage: React.FC = () => {
     items: BillItem[];
   } | null>(null);
   const [shopSettings, setShopSettings] = useState<ShopSettings | null>(null);
-  const { activeCompany } = useCompany();
+  const { activeCompany, activeCompanyId, isAllCompanies } = useCompany();
 
   const effectiveSettings = useMemo(() => {
     if (!shopSettings) return null;
@@ -90,9 +90,11 @@ export const NewBillPage: React.FC = () => {
     return {
       ...shopSettings,
       shop_name: activeCompany.name,
-      gst_no: activeCompany.gstin,
-      shop_address: `${activeCompany.address}${activeCompany.city ? `, ${activeCompany.city}` : ''}${activeCompany.pincode ? ` - ${activeCompany.pincode}` : ''}`,
-      shop_phone: activeCompany.phone,
+      gst_no: activeCompany.gstin || shopSettings.gst_no,
+      shop_address: activeCompany.address
+        ? `${activeCompany.address}${activeCompany.city ? `, ${activeCompany.city}` : ''}${activeCompany.pincode ? ` - ${activeCompany.pincode}` : ''}`
+        : shopSettings.shop_address,
+      shop_phone: activeCompany.phone || shopSettings.shop_phone,
       receipt_footer: activeCompany.receipt_footer || shopSettings.receipt_footer,
     };
   }, [shopSettings, activeCompany]);
@@ -100,7 +102,13 @@ export const NewBillPage: React.FC = () => {
   async function loadData() {
     await initLocalDatabase();
     const all = await db.products.toArray();
-    const prods = all.filter((p) => p.is_active);
+    const prods = all.filter(
+      (p) =>
+        p.is_active &&
+        (isAllCompanies ||
+          p.company_id === activeCompanyId ||
+          (!p.company_id && activeCompanyId === DEFAULT_COMPANY_ID))
+    );
     setAllProducts(prods);
     createProductSearchIndex(prods);
 
@@ -129,7 +137,7 @@ export const NewBillPage: React.FC = () => {
       window.removeEventListener('supabase-data-refreshed', handleRefreshed);
       window.removeEventListener('brands-synced', handleRefreshed);
     };
-  }, []);
+  }, [activeCompanyId, isAllCompanies]);
 
   // Distinct categories list
   const categories = useMemo(() => {
@@ -242,7 +250,7 @@ export const NewBillPage: React.FC = () => {
     setSaveError('');
 
     try {
-      const result = await saveBill(user);
+      const result = await saveBill(user, activeCompany?.id);
       setSavedReceiptData(result);
       setIsMobileSheetOpen(false);
     } catch (err: any) {

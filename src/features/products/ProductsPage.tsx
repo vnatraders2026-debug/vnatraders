@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { db, initLocalDatabase, DEFAULT_BRANDS, DEFAULT_CATEGORIES, addCategory, deleteCategory } from '@/db';
+import { db, initLocalDatabase, DEFAULT_BRANDS, DEFAULT_CATEGORIES, addCategory, deleteCategory, DEFAULT_COMPANY_ID } from '@/db';
 import { Product, Brand, Category, OutboxItem } from '@/types';
 import { updateProductInIndex } from '@/db/search';
 import { syncService } from '@/sync/syncService';
 import { formatINR } from '@/lib/format';
 import { generateUUID } from '@/lib/uuid';
+import { useCompany } from '@/features/companies/CompanyContext';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -54,6 +55,7 @@ type ProductFormData = z.infer<typeof productSchema>;
 
 export const ProductsPage: React.FC = () => {
   const { user } = useAuth();
+  const { activeCompanyId, isAllCompanies } = useCompany();
   const isAdmin = user?.role === 'admin';
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
@@ -211,6 +213,13 @@ export const ProductsPage: React.FC = () => {
   // Filtered products
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
+      // 0. Company isolation filter
+      const matchesCompany =
+        isAllCompanies ||
+        p.company_id === activeCompanyId ||
+        (!p.company_id && activeCompanyId === DEFAULT_COMPANY_ID);
+      if (!matchesCompany) return false;
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchesName = p.name.toLowerCase().includes(q);
@@ -368,6 +377,7 @@ export const ProductsPage: React.FC = () => {
       price: finalPrice,
       wholesale_price: finalWholesalePrice,
       stock: data.stock,
+      company_id: editingProduct?.company_id || activeCompanyId || DEFAULT_COMPANY_ID,
       is_active: editingProduct ? editingProduct.is_active : true,
       created_at: editingProduct?.created_at || now,
       updated_at: now,

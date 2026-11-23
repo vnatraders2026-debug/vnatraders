@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db, generateNextSoNo } from '@/db';
+import { db, generateNextSoNo, DEFAULT_COMPANY_ID } from '@/db';
+import { useCompany } from '@/features/companies/CompanyContext';
 import { syncService } from '@/sync/syncService';
 import { SaleOrder, SaleOrderItem, Product, Client, PricingType, SaleOrderStatus, Profile, TransportEntry } from '@/types';
 import { formatINR, numberToWordsINR, formatDateDMY } from '@/lib/format';
@@ -29,6 +30,7 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  AlertTriangle,
   Package,
   Trash2,
   Eye,
@@ -36,16 +38,14 @@ import {
   XCircle,
   ClipboardCheck,
   Lock,
-  Building2,
 } from 'lucide-react';
-import { useCompany } from '@/features/company/CompanyContext';
 
 export const SaleOrdersPage: React.FC = () => {
   const { user } = useAuth();
+  const { activeCompany, activeCompanyId, isAllCompanies, companies } = useCompany();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
   const { toast } = useToast();
-  const { activeCompany, companies } = useCompany();
 
   const [orders, setOrders] = useState<SaleOrder[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -53,7 +53,6 @@ export const SaleOrdersPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [companyFilter, setCompanyFilter] = useState<string>('all');
 
   // Create Modal state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -403,13 +402,12 @@ export const SaleOrdersPage: React.FC = () => {
       const soRecord: SaleOrder = {
         id: soId,
         so_no: soNo,
+        company_id: activeCompanyId || DEFAULT_COMPANY_ID,
         client_id: selectedClientId || undefined,
         customer_name: customerName.trim(),
         customer_phone: customerPhone.trim() || undefined,
         customer_address: customerAddress.trim() || undefined,
         customer_gstin: customerGstin.trim().toUpperCase() || undefined,
-        company_id: activeCompany?.id,
-        company_name: activeCompany?.name,
         pricing_type: pricingType,
         order_date: orderDate,
         delivery_due_date: deliveryDueDate || undefined,
@@ -722,11 +720,13 @@ export const SaleOrdersPage: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
-      if (companyFilter !== 'all') {
-        const isDefault = companies.find((c) => c.is_default)?.id === companyFilter;
-        const matches = o.company_id ? o.company_id === companyFilter : isDefault;
-        if (!matches) return false;
-      }
+      // 0. Company isolation filter
+      const matchesCompany =
+        isAllCompanies ||
+        o.company_id === activeCompanyId ||
+        (!o.company_id && activeCompanyId === DEFAULT_COMPANY_ID);
+      if (!matchesCompany) return false;
+
       if (statusFilter !== 'all' && o.status !== statusFilter) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -740,7 +740,7 @@ export const SaleOrdersPage: React.FC = () => {
       }
       return true;
     });
-  }, [orders, companyFilter, statusFilter, searchQuery, companies]);
+  }, [orders, statusFilter, searchQuery]);
 
   return (
     <div className="space-y-4">
@@ -872,20 +872,6 @@ export const SaleOrdersPage: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <Select
-            value={companyFilter}
-            onChange={(e) => setCompanyFilter(e.target.value)}
-            className="text-xs min-h-[38px]"
-            title="Filter by Operating Company"
-          >
-            <option value="all">All Companies</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} {c.code ? `(${c.code})` : ''}
-              </option>
-            ))}
-          </Select>
-
-          <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="text-xs min-h-[38px]"
@@ -899,13 +885,12 @@ export const SaleOrdersPage: React.FC = () => {
             <option value="cancelled">Cancelled</option>
           </Select>
 
-          {(searchQuery || statusFilter !== 'all' || companyFilter !== 'all') && (
+          {(searchQuery || statusFilter !== 'all') && (
             <button
               type="button"
               onClick={() => {
                 setSearchQuery('');
                 setStatusFilter('all');
-                setCompanyFilter('all');
               }}
               className="text-danger hover:underline text-xs font-semibold px-2 flex items-center gap-1"
             >
@@ -918,7 +903,7 @@ export const SaleOrdersPage: React.FC = () => {
 
       {/* Sale Orders Table */}
       {loading ? (
-        <TableSkeleton rows={6} cols={9} />
+        <TableSkeleton rows={6} cols={8} />
       ) : filteredOrders.length === 0 ? (
         <EmptyState
           message="No sale orders found"
@@ -931,7 +916,6 @@ export const SaleOrdersPage: React.FC = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>SO Number</TableHead>
-                <TableHead>Company</TableHead>
                 <TableHead>Order Date</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Pricing</TableHead>
@@ -945,11 +929,6 @@ export const SaleOrdersPage: React.FC = () => {
               {filteredOrders.map((o) => (
                 <TableRow key={o.id}>
                   <TableCell className="font-mono font-bold text-accent">{o.so_no}</TableCell>
-                  <TableCell className="text-xs">
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent/10 text-accent border border-accent/20" title={o.company_name}>
-                      {o.company_name || companies.find((c) => c.id === o.company_id)?.code || 'VNA'}
-                    </span>
-                  </TableCell>
                   <TableCell className="text-xs text-text-muted whitespace-nowrap">
                     {new Date(o.order_date).toLocaleDateString('en-IN', {
                       day: '2-digit',
@@ -1079,22 +1058,6 @@ export const SaleOrdersPage: React.FC = () => {
         maxWidth="full"
       >
         <div className="space-y-4">
-          {/* Operating Company Banner */}
-          <div className="bg-accent/10 border border-accent/20 rounded-md p-2.5 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <Building2 size={15} className="text-accent" />
-              <div>
-                <span className="font-bold text-text">Operating Firm: {activeCompany?.name || 'VNA TRADERS'}</span>
-                <span className="text-text-muted ml-2">GSTIN: {activeCompany?.gstin || '33ACSPV5299F1Z5'}</span>
-              </div>
-            </div>
-            {activeCompany?.code && (
-              <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-surface border text-accent text-[11px]">
-                {activeCompany.code}
-              </span>
-            )}
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-text mb-1">
@@ -1257,118 +1220,189 @@ export const SaleOrdersPage: React.FC = () => {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-border text-text-muted text-left">
-                    <th className="py-2 font-semibold">Product Description</th>
-                    <th className="py-2 font-semibold w-20 text-center">Unit</th>
-                    <th className="py-2 font-semibold text-right w-24">Qty (Boxes)</th>
-                    <th className="py-2 font-semibold text-right w-28">Rate (₹)</th>
-                    <th className="py-2 font-semibold text-right w-28">Total (₹)</th>
-                    <th className="py-2 text-right w-10"></th>
+                    <th className="py-2.5 px-2 font-semibold">Product Description</th>
+                    <th className="py-2.5 font-semibold w-16 text-center">Unit</th>
+                    <th className="py-2.5 font-semibold text-right w-24">Qty (Boxes)</th>
+                    <th className="py-2.5 font-semibold text-right w-24">Rate (₹)</th>
+                    <th className="py-2.5 font-semibold text-right w-24">Total (₹)</th>
+                    <th className="py-2.5 font-semibold text-center w-36 px-2">Stock Status</th>
+                    <th className="py-2.5 text-right w-10 pr-2"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
-                  {soItems.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-surface/50">
-                      <td className="py-2 pr-2">
-                        {item.product_id ? (
-                          <div className="flex items-center gap-1.5">
-                            <SearchableProductSelect
-                              products={products}
-                              value={item.product_id}
-                              pricingType={pricingType}
-                              onChange={(prodId) => handleItemChange(idx, 'product_id', prodId)}
-                              onCustomSelect={() => handleItemChange(idx, 'product_id', '__custom__')}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleItemChange(idx, 'product_id', '__custom__')}
-                              className="text-[10px] text-accent font-semibold px-2 py-1.5 rounded bg-accent/10 hover:bg-accent/20 whitespace-nowrap shrink-0"
-                              title="Switch to custom / non-existing product"
-                            >
-                              Custom
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="space-y-1.5">
+                  {soItems.map((item, idx) => {
+                    const prod = item.product_id ? products.find((p) => p.id === item.product_id) : undefined;
+                    const stock = prod ? (prod.stock ?? 0) : 0;
+                    const minStock = prod ? (prod.min_stock ?? 20) : 20;
+                    const isZeroStock = Boolean(prod && stock === 0);
+                    const isShortage = Boolean(prod && item.qty > stock);
+                    const isLowStock = Boolean(prod && stock > 0 && stock <= minStock);
+
+                    return (
+                      <tr key={idx} className="hover:bg-surface/50">
+                        <td className="py-2 px-2">
+                          {item.product_id ? (
                             <div className="flex items-center gap-1.5">
-                              <Input
-                                value={item.product_name}
-                                onChange={(e) => handleItemChange(idx, 'product_name', e.target.value)}
-                                placeholder="Enter non-existing / new cracker name..."
-                                className="text-xs h-8 font-bold"
-                                required
+                              <SearchableProductSelect
+                                products={products}
+                                value={item.product_id}
+                                pricingType={pricingType}
+                                onChange={(prodId) => handleItemChange(idx, 'product_id', prodId)}
+                                onCustomSelect={() => handleItemChange(idx, 'product_id', '__custom__')}
                               />
                               <button
                                 type="button"
-                                onClick={() => {
-                                  if (products.length > 0) {
-                                    handleItemChange(idx, 'product_id', products[0].id);
-                                  }
-                                }}
-                                className="text-[10px] text-text-muted hover:text-text px-2 py-1 rounded border border-border whitespace-nowrap"
-                                title="Switch back to catalog selection"
+                                onClick={() => handleItemChange(idx, 'product_id', '__custom__')}
+                                className="text-[10px] text-accent font-semibold px-2 py-1.5 rounded bg-accent/10 hover:bg-accent/20 whitespace-nowrap shrink-0"
+                                title="Switch to custom / non-existing product"
                               >
-                                Catalog
+                                Custom
                               </button>
                             </div>
-                            <div className="flex items-center gap-2 text-[10px]">
-                              <span className="text-text-muted">Brand:</span>
-                              <input
-                                value={item.brand || 'Standard'}
-                                onChange={(e) => handleItemChange(idx, 'brand', e.target.value)}
-                                placeholder="Brand (e.g. Standard)"
-                                className="py-0.5 px-1.5 text-xs bg-surface border border-border rounded w-28"
-                              />
-                              <span className="text-text-muted">Unit:</span>
-                              <input
-                                value={item.unit || 'box'}
-                                onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
-                                placeholder="Unit"
-                                className="py-0.5 px-1.5 text-xs bg-surface border border-border rounded w-16 text-center"
-                              />
-                              <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 font-bold uppercase text-[9px]">
-                                Non-Existing / Custom Item
+                          ) : (
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <Input
+                                  value={item.product_name}
+                                  onChange={(e) => handleItemChange(idx, 'product_name', e.target.value)}
+                                  placeholder="Enter non-existing / new cracker name..."
+                                  className="text-xs h-8 font-bold"
+                                  required
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (products.length > 0) {
+                                      handleItemChange(idx, 'product_id', products[0].id);
+                                    }
+                                  }}
+                                  className="text-[10px] text-text-muted hover:text-text px-2 py-1 rounded border border-border whitespace-nowrap"
+                                  title="Switch back to catalog selection"
+                                >
+                                  Catalog
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px]">
+                                <span className="text-text-muted">Brand:</span>
+                                <input
+                                  value={item.brand || 'Standard'}
+                                  onChange={(e) => handleItemChange(idx, 'brand', e.target.value)}
+                                  placeholder="Brand (e.g. Standard)"
+                                  className="py-0.5 px-1.5 text-xs bg-surface border border-border rounded w-28"
+                                />
+                                <span className="text-text-muted">Unit:</span>
+                                <input
+                                  value={item.unit || 'box'}
+                                  onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
+                                  placeholder="Unit"
+                                  className="py-0.5 px-1.5 text-xs bg-surface border border-border rounded w-16 text-center"
+                                />
+                                <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 font-bold uppercase text-[9px]">
+                                  Non-Existing / Custom Item
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2 text-text-muted uppercase text-[11px] text-center align-top pt-3">
+                          {item.unit}
+                        </td>
+                        <td className="py-2 text-right pr-2 align-top pt-2">
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.qty}
+                            onChange={(e) => handleItemChange(idx, 'qty', e.target.value)}
+                            className={`w-20 text-right py-1 px-2 text-xs font-mono font-bold bg-surface border rounded ${
+                              isZeroStock
+                                ? 'border-red-500 ring-2 ring-red-400/60 bg-red-500/5'
+                                : isShortage
+                                ? 'border-amber-500 ring-2 ring-amber-400/60 bg-amber-500/5'
+                                : 'border-border'
+                            }`}
+                          />
+                        </td>
+                        <td className="py-2 text-right pr-2 align-top pt-2">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={item.unit_price}
+                            onChange={(e) => handleItemChange(idx, 'unit_price', e.target.value)}
+                            className="w-24 text-right py-1 px-2 text-xs font-mono font-bold bg-surface border border-border rounded"
+                          />
+                        </td>
+                        <td className="py-2 text-right font-mono font-bold text-accent align-top pt-3 pr-2">
+                          {formatINR(item.line_total)}
+                        </td>
+
+                        {/* Dedicated Right-Side Stock Status Column with Blinking Alerts */}
+                        <td className="py-2 px-2 text-center align-top pt-2.5">
+                          {!item.product_id ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-surface border border-border text-text-muted">
+                              Custom
+                            </span>
+                          ) : !prod ? (
+                            <span className="text-text-muted text-xs font-mono">-</span>
+                          ) : isZeroStock ? (
+                            <div className="flex flex-col items-center justify-center space-y-0.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-red-600 text-white shadow-sm stock-blink-danger">
+                                <AlertCircle size={11} className="shrink-0" />
+                                0 Stock
+                              </span>
+                              <span className="text-[9px] font-bold text-red-600 uppercase tracking-tight stock-blink-danger">
+                                Out of Stock
                               </span>
                             </div>
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-2 text-text-muted uppercase text-[11px] text-center align-top pt-3">
-                        {item.unit}
-                      </td>
-                      <td className="py-2 text-right pr-2 align-top pt-2">
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.qty}
-                          onChange={(e) => handleItemChange(idx, 'qty', e.target.value)}
-                          className="w-20 text-right py-1 px-2 text-xs font-mono font-bold bg-surface border border-border rounded"
-                        />
-                      </td>
-                      <td className="py-2 text-right pr-2 align-top pt-2">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={item.unit_price}
-                          onChange={(e) => handleItemChange(idx, 'unit_price', e.target.value)}
-                          className="w-24 text-right py-1 px-2 text-xs font-mono font-bold bg-surface border border-border rounded"
-                        />
-                      </td>
-                      <td className="py-2 text-right font-mono font-bold text-accent align-top pt-3">
-                        {formatINR(item.line_total)}
-                      </td>
-                      <td className="py-2 text-right align-top pt-2.5">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItemRow(idx)}
-                          disabled={soItems.length <= 1}
-                          className="text-text-muted hover:text-danger disabled:opacity-20 p-1"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                          ) : isShortage ? (
+                            <div className="flex flex-col items-center justify-center space-y-0.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-white shadow-sm stock-blink-warning">
+                                <AlertTriangle size={11} className="shrink-0" />
+                                Avl: {stock}
+                              </span>
+                              <span className="text-[9px] font-black text-red-600 uppercase tracking-tight stock-blink-danger">
+                                Short: -{item.qty - stock}
+                              </span>
+                            </div>
+                          ) : isLowStock ? (
+                            <div className="flex flex-col items-center justify-center space-y-0.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/15 border border-amber-500/50 text-amber-700 dark:text-amber-300 stock-blink-warning">
+                                <AlertTriangle size={11} className="shrink-0" />
+                                {stock} {item.unit}
+                              </span>
+                              <span className="text-[9px] font-bold text-amber-600 stock-blink-warning">
+                                Low Stock
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center space-y-0.5">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 font-mono">
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                </span>
+                                {stock} {item.unit}
+                              </span>
+                              <span className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                In Stock
+                              </span>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="py-2 text-right align-top pt-2.5 pr-2">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItemRow(idx)}
+                            disabled={soItems.length <= 1}
+                            className="text-text-muted hover:text-danger disabled:opacity-20 p-1"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1585,7 +1619,10 @@ export const SaleOrdersPage: React.FC = () => {
       )}
 
       {/* VIEW & PRINT SALE ORDER / DELIVERY CHALLAN MODAL */}
-      {selectedOrder && (
+      {selectedOrder && (() => {
+        const docCompany = (selectedOrder.company_id && companies.find((c) => c.id === selectedOrder.company_id)) || activeCompany;
+
+        return (
         <Dialog
           isOpen={isViewModalOpen}
           onClose={() => setIsViewModalOpen(false)}
@@ -1694,11 +1731,6 @@ export const SaleOrdersPage: React.FC = () => {
             </div>
 
             {/* A4 PRINTABLE DOCUMENT CONTAINER */}
-            {(() => {
-              const orderCompany = selectedOrder
-                ? companies.find((c) => c.id === selectedOrder.company_id) || activeCompany
-                : activeCompany;
-              return (
             <div id="sale-order-print-area" className="printable-area">
               <div className="p-6 bg-white text-gray-900 border-2 border-gray-800 rounded-sm shadow-xs space-y-4 print:p-0 print:border-none print:shadow-none text-xs font-sans max-w-4xl mx-auto">
                 {/* Header */}
@@ -1706,13 +1738,13 @@ export const SaleOrdersPage: React.FC = () => {
                   <div>
                     <VnaLogo size="md" />
                     <div className="font-extrabold text-base uppercase text-gray-900 mt-1">
-                      {orderCompany?.name || 'VNA TRADERS'}
+                      {docCompany?.name || 'VNA TRADERS'}
                     </div>
                     <div className="text-[11px] text-gray-600 leading-tight">
-                      {orderCompany?.legal_name || 'Wholesale & Retail Fireworks Merchant'}<br />
-                      {orderCompany?.address ? `${orderCompany.address}, ${orderCompany.city || 'Hosur'}, ${orderCompany.state || 'Tamil Nadu'} - ${orderCompany.pincode || '635109'}` : 'Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109'}<br />
-                      {orderCompany?.phone ? `Phone: ${orderCompany.phone}` : 'Phone: +91 94431 23456 / +91 94432 98765'}<br />
-                      <strong>GSTIN: {orderCompany?.gstin || '33ACSPV5299F1Z5'}</strong> • State Code: 33 ({orderCompany?.state || 'Tamil Nadu'})
+                      {docCompany?.trade_name || 'Wholesale & Retail Fireworks Merchant'}<br />
+                      {docCompany?.address ? `${docCompany.address}, ${docCompany.city || 'Hosur'}${docCompany.pincode ? ` - ${docCompany.pincode}` : ''}` : 'Jeermangalam, Hosur, Tamil Nadu - 635109'}<br />
+                      Phone: {docCompany?.phone || '+91 94431 23456'}<br />
+                      <strong>GSTIN: {docCompany?.gstin || '33ACSPV5299F1Z5'}</strong> • State Code: {docCompany?.state_code || '33'} ({docCompany?.state || 'Tamil Nadu'})
                     </div>
                   </div>
 
@@ -1873,10 +1905,11 @@ export const SaleOrdersPage: React.FC = () => {
 
                   <div className="p-2.5 bg-gray-50 border border-gray-300 rounded text-[11px] leading-tight space-y-1">
                     <span className="font-bold text-gray-800 uppercase block">Bank Payment Details (RTGS / NEFT / IMPS):</span>
-                    <div>Bank Name: <strong>{orderCompany?.bank_name || 'State Bank of India (SBI)'}</strong></div>
-                    <div>Account Name: <strong>{orderCompany?.legal_name || orderCompany?.name || 'VNA TRADERS'}</strong></div>
-                    <div>Account Number: <strong className="font-mono font-bold">{orderCompany?.bank_account_no || '3948201004521'}</strong></div>
-                    <div>IFSC Code: <strong className="font-mono font-bold">{orderCompany?.bank_ifsc || 'SBIN0001234'}</strong> {orderCompany?.bank_branch ? `(${orderCompany.bank_branch})` : '(Hosur Branch)'}</div>
+                    <div>Bank Name: <strong>{docCompany?.bank_name || 'State Bank of India (SBI)'}</strong></div>
+                    <div>Account Name: <strong>{docCompany?.name || 'VNA TRADERS'}</strong></div>
+                    <div>Account Number: <strong className="font-mono font-bold">{docCompany?.bank_account_no || '3948201004521'}</strong></div>
+                    <div>IFSC Code: <strong className="font-mono font-bold">{docCompany?.bank_ifsc || 'SBIN0001234'}</strong> ({docCompany?.bank_branch || 'Hosur Branch'})</div>
+                    {docCompany?.upi_id && <div>UPI ID: <strong className="font-mono">{docCompany.upi_id}</strong></div>}
                   </div>
                 </div>
 
@@ -1914,19 +1947,17 @@ export const SaleOrdersPage: React.FC = () => {
 
                     <div className="text-center">
                       <div className="h-14 flex items-end justify-center text-gray-400 italic text-[11px]">
-                        For <strong>{orderCompany?.name || 'VNA TRADERS'}</strong>
+                        For <strong>{docCompany?.name || 'VNA TRADERS'}</strong>
                       </div>
                       <div className="border-t border-gray-800 pt-1">
                         <div className="font-bold text-gray-900 text-xs">Authorized Signatory</div>
-                        <div className="text-[10px] text-gray-500">Hosur Depot Dispatch Office</div>
+                        <div className="text-[10px] text-gray-500">{docCompany?.city || 'Hosur'} Depot Dispatch Office</div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-              );
-            })()}
 
             {/* Bottom Actions */}
             <div className="flex justify-between items-center pt-3 border-t border-border no-print">
@@ -1954,7 +1985,8 @@ export const SaleOrdersPage: React.FC = () => {
             </div>
           </div>
         </Dialog>
-      )}
+        );
+      })()}
 
       {/* QUICK CREATE PRODUCT MODAL */}
       <QuickProductModal

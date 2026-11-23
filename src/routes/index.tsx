@@ -50,7 +50,7 @@ const TransportPage = lazy(() =>
   import('@/features/transport/TransportPage').then((m) => ({ default: m.TransportPage }))
 );
 const CompaniesPage = lazy(() =>
-  import('@/features/company/CompaniesPage').then((m) => ({ default: m.CompaniesPage }))
+  import('@/features/companies/CompaniesPage').then((m) => ({ default: m.CompaniesPage }))
 );
 
 const LazyFallback = () => (
@@ -220,14 +220,6 @@ export const AppRoutes: React.FC = () => {
             </Suspense>
           }
         />
-        <Route
-          path="companies"
-          element={
-            <Suspense fallback={<LazyFallback />}>
-              <CompaniesPage />
-            </Suspense>
-          }
-        />
 
         {/* Analytics & Reports Routes (Admin, Manager, Supervisor) */}
         <Route
@@ -258,6 +250,16 @@ export const AppRoutes: React.FC = () => {
                 <UsersPage />
               </Suspense>
             </RequireAdmin>
+          }
+        />
+        <Route
+          path="companies"
+          element={
+            <RequireAdminOrManager>
+              <Suspense fallback={<LazyFallback />}>
+                <CompaniesPage />
+              </Suspense>
+            </RequireAdminOrManager>
           }
         />
         <Route

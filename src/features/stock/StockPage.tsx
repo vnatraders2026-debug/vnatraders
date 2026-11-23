@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db, adjustProductStock, initLocalDatabase } from '@/db';
+import { db, adjustProductStock, initLocalDatabase, DEFAULT_COMPANY_ID } from '@/db';
+import { useCompany } from '@/features/companies/CompanyContext';
 import { Product, StockMovement, StockMovementType } from '@/types';
 import { formatINR } from '@/lib/format';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
@@ -25,6 +26,7 @@ import {
 
 export const StockPage: React.FC = () => {
   const { user } = useAuth();
+  const { activeCompanyId, isAllCompanies } = useCompany();
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
   const { toast } = useToast();
 
@@ -83,9 +85,29 @@ export const StockPage: React.FC = () => {
     };
   }, []);
 
+  // Company scoped products
+  const companyProducts = useMemo(() => {
+    return products.filter(
+      (p) =>
+        isAllCompanies ||
+        p.company_id === activeCompanyId ||
+        (!p.company_id && activeCompanyId === DEFAULT_COMPANY_ID)
+    );
+  }, [products, isAllCompanies, activeCompanyId]);
+
+  // Company scoped movements
+  const companyMovements = useMemo(() => {
+    return movements.filter(
+      (m) =>
+        isAllCompanies ||
+        m.company_id === activeCompanyId ||
+        (!m.company_id && activeCompanyId === DEFAULT_COMPANY_ID)
+    );
+  }, [movements, isAllCompanies, activeCompanyId]);
+
   // Summary Metrics
   const metrics = useMemo(() => {
-    const totalItems = products.length;
+    const totalItems = companyProducts.length;
     let inStock = 0;
     let lowStock = 0;
     let outOfStock = 0;
@@ -93,7 +115,7 @@ export const StockPage: React.FC = () => {
     let retailValuation = 0;
     let wholesaleValuation = 0;
 
-    products.forEach((p) => {
+    companyProducts.forEach((p) => {
       const s = p.stock || 0;
       totalStockUnits += s;
       retailValuation += s * (p.price || 0);
@@ -117,11 +139,11 @@ export const StockPage: React.FC = () => {
       retailValuation,
       wholesaleValuation,
     };
-  }, [products]);
+  }, [companyProducts]);
 
   // Filtered Products
   const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
+    return companyProducts.filter((p) => {
       if (categoryFilter !== 'all' && p.category !== categoryFilter) return false;
       if (brandFilter !== 'all' && (p.brand || 'Standard') !== brandFilter) return false;
 
@@ -139,11 +161,11 @@ export const StockPage: React.FC = () => {
       }
       return true;
     });
-  }, [products, searchQuery, categoryFilter, brandFilter, stockStatusFilter]);
+  }, [companyProducts, searchQuery, categoryFilter, brandFilter, stockStatusFilter]);
 
   // Filtered Ledger Movements
   const filteredMovements = useMemo(() => {
-    return movements.filter((m) => {
+    return companyMovements.filter((m) => {
       if (movementTypeFilter !== 'all' && m.type !== movementTypeFilter) return false;
       if (ledgerSearchQuery.trim()) {
         const q = ledgerSearchQuery.toLowerCase().trim();
@@ -154,7 +176,7 @@ export const StockPage: React.FC = () => {
       }
       return true;
     });
-  }, [movements, movementTypeFilter, ledgerSearchQuery]);
+  }, [companyMovements, movementTypeFilter, ledgerSearchQuery]);
 
   const handleOpenAdjustModal = (product: Product) => {
     setSelectedProduct(product);

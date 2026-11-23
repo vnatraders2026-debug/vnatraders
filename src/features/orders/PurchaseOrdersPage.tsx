@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db, generateNextPoNo, applyStockChange } from '@/db';
+import { db, generateNextPoNo, applyStockChange, DEFAULT_COMPANY_ID } from '@/db';
+import { useCompany } from '@/features/companies/CompanyContext';
 import { syncService } from '@/sync/syncService';
 import { PurchaseOrder, PurchaseOrderItem, Product, Client } from '@/types';
 import { formatINR, numberToWordsINR, formatDateDMY } from '@/lib/format';
@@ -33,15 +34,13 @@ import {
   Eye,
   Boxes,
   RotateCcw,
-  Building2,
 } from 'lucide-react';
-import { useCompany } from '@/features/company/CompanyContext';
 
 export const PurchaseOrdersPage: React.FC = () => {
   const { user } = useAuth();
+  const { activeCompany, activeCompanyId, isAllCompanies, companies } = useCompany();
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
   const { toast } = useToast();
-  const { activeCompany, companies } = useCompany();
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Client[]>([]);
@@ -49,7 +48,6 @@ export const PurchaseOrdersPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [companyFilter, setCompanyFilter] = useState<string>('all');
 
   // Create Modal state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -342,12 +340,11 @@ export const PurchaseOrdersPage: React.FC = () => {
       const poRecord: PurchaseOrder = {
         id: poId,
         po_no: poNo,
+        company_id: activeCompanyId || DEFAULT_COMPANY_ID,
         supplier_id: selectedSupplierId || undefined,
         supplier_name: supplierName.trim(),
         supplier_phone: supplierPhone.trim() || undefined,
         supplier_gstin: supplierGstin.trim().toUpperCase() || undefined,
-        company_id: activeCompany?.id,
-        company_name: activeCompany?.name,
         order_date: orderDate,
         expected_date: expectedDate || undefined,
         status: status,
@@ -511,11 +508,13 @@ export const PurchaseOrdersPage: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
-      if (companyFilter !== 'all') {
-        const isDefault = companies.find((c) => c.is_default)?.id === companyFilter;
-        const matches = o.company_id ? o.company_id === companyFilter : isDefault;
-        if (!matches) return false;
-      }
+      // 0. Company isolation filter
+      const matchesCompany =
+        isAllCompanies ||
+        o.company_id === activeCompanyId ||
+        (!o.company_id && activeCompanyId === DEFAULT_COMPANY_ID);
+      if (!matchesCompany) return false;
+
       if (statusFilter !== 'all' && o.status !== statusFilter) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -527,7 +526,7 @@ export const PurchaseOrdersPage: React.FC = () => {
       }
       return true;
     });
-  }, [orders, companyFilter, statusFilter, searchQuery, companies]);
+  }, [orders, statusFilter, searchQuery]);
 
   return (
     <div className="space-y-4">
@@ -602,20 +601,6 @@ export const PurchaseOrdersPage: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <Select
-            value={companyFilter}
-            onChange={(e) => setCompanyFilter(e.target.value)}
-            className="text-xs min-h-[38px]"
-            title="Filter by Operating Company"
-          >
-            <option value="all">All Companies</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} {c.code ? `(${c.code})` : ''}
-              </option>
-            ))}
-          </Select>
-
-          <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="text-xs min-h-[38px]"
@@ -627,13 +612,12 @@ export const PurchaseOrdersPage: React.FC = () => {
             <option value="cancelled">Cancelled</option>
           </Select>
 
-          {(searchQuery || statusFilter !== 'all' || companyFilter !== 'all') && (
+          {(searchQuery || statusFilter !== 'all') && (
             <button
               type="button"
               onClick={() => {
                 setSearchQuery('');
                 setStatusFilter('all');
-                setCompanyFilter('all');
               }}
               className="text-danger hover:underline text-xs font-semibold px-2 flex items-center gap-1"
             >
@@ -646,7 +630,7 @@ export const PurchaseOrdersPage: React.FC = () => {
 
       {/* Orders Table */}
       {loading ? (
-        <TableSkeleton rows={6} cols={8} />
+        <TableSkeleton rows={6} cols={7} />
       ) : filteredOrders.length === 0 ? (
         <EmptyState
           message="No purchase orders found"
@@ -659,7 +643,6 @@ export const PurchaseOrdersPage: React.FC = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>PO Number</TableHead>
-                <TableHead>Company</TableHead>
                 <TableHead>Order Date</TableHead>
                 <TableHead>Supplier / Factory</TableHead>
                 <TableHead>Expected Date</TableHead>
@@ -672,11 +655,6 @@ export const PurchaseOrdersPage: React.FC = () => {
               {filteredOrders.map((o) => (
                 <TableRow key={o.id}>
                   <TableCell className="font-mono font-bold text-accent">{o.po_no}</TableCell>
-                  <TableCell className="text-xs">
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent/10 text-accent border border-accent/20" title={o.company_name}>
-                      {o.company_name || companies.find((c) => c.id === o.company_id)?.code || 'VNA'}
-                    </span>
-                  </TableCell>
                   <TableCell className="text-xs text-text-muted font-medium whitespace-nowrap">
                     {new Date(o.order_date).toLocaleDateString('en-IN', {
                       day: '2-digit',
@@ -748,22 +726,6 @@ export const PurchaseOrdersPage: React.FC = () => {
         maxWidth="full"
       >
         <div className="space-y-4">
-          {/* Operating Company Banner */}
-          <div className="bg-accent/10 border border-accent/20 rounded-md p-2.5 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <Building2 size={15} className="text-accent" />
-              <div>
-                <span className="font-bold text-text">Operating Firm: {activeCompany?.name || 'VNA TRADERS'}</span>
-                <span className="text-text-muted ml-2">GSTIN: {activeCompany?.gstin || '33ACSPV5299F1Z5'}</span>
-              </div>
-            </div>
-            {activeCompany?.code && (
-              <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-surface border text-accent text-[11px]">
-                {activeCompany.code}
-              </span>
-            )}
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-text mb-1">
@@ -1057,7 +1019,10 @@ export const PurchaseOrdersPage: React.FC = () => {
       </Dialog>
 
       {/* VIEW & PRINT PURCHASE ORDER MODAL */}
-      {selectedOrder && (
+      {selectedOrder && (() => {
+        const docCompany = (selectedOrder.company_id && companies.find((c) => c.id === selectedOrder.company_id)) || activeCompany;
+
+        return (
         <Dialog
           isOpen={isViewModalOpen}
           onClose={() => setIsViewModalOpen(false)}
@@ -1105,11 +1070,6 @@ export const PurchaseOrdersPage: React.FC = () => {
             </div>
 
             {/* A4 PRINTABLE DOCUMENT CONTAINER */}
-            {(() => {
-              const poCompany = selectedOrder
-                ? companies.find((c) => c.id === selectedOrder.company_id) || activeCompany
-                : activeCompany;
-              return (
             <div id="purchase-order-print-area" className="printable-area">
               <div className="max-w-4xl mx-auto p-6 bg-white text-gray-900 border-2 border-gray-800 rounded-sm shadow-xs space-y-4 print:p-0 print:border-none print:shadow-none text-xs font-sans">
                 {/* Header branding */}
@@ -1117,13 +1077,13 @@ export const PurchaseOrdersPage: React.FC = () => {
                   <div>
                     <VnaLogo size="md" />
                     <div className="font-extrabold text-base uppercase text-gray-900 mt-1">
-                      {poCompany?.name || 'VNA TRADERS'}
+                      {docCompany?.name || 'VNA TRADERS'}
                     </div>
                     <div className="text-[11px] text-gray-600 leading-tight">
-                      {poCompany?.legal_name || 'Wholesale & Retail Fireworks Merchant'}<br />
-                      {poCompany?.address ? `${poCompany.address}, ${poCompany.city || 'Hosur'}, ${poCompany.state || 'Tamil Nadu'} - ${poCompany.pincode || '635109'}` : 'Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109'}<br />
-                      {poCompany?.phone ? `Phone: ${poCompany.phone}` : 'Phone: +91 94431 23456 / +91 94432 98765'}<br />
-                      <strong>GSTIN: {poCompany?.gstin || '33ACSPV5299F1Z5'}</strong> • State Code: 33 ({poCompany?.state || 'Tamil Nadu'})
+                      {docCompany?.trade_name || 'Wholesale & Retail Fireworks Merchant'}<br />
+                      {docCompany?.address ? `${docCompany.address}, ${docCompany.city || 'Hosur'}${docCompany.pincode ? ` - ${docCompany.pincode}` : ''}` : 'Jeermangalam, Hosur, Tamil Nadu - 635109'}<br />
+                      Phone: {docCompany?.phone || '+91 94431 23456'}<br />
+                      <strong>GSTIN: {docCompany?.gstin || '33ACSPV5299F1Z5'}</strong> • State Code: {docCompany?.state_code || '33'} ({docCompany?.state || 'Tamil Nadu'})
                     </div>
                   </div>
 
@@ -1168,9 +1128,9 @@ export const PurchaseOrdersPage: React.FC = () => {
 
                   <div className="border-l border-gray-300 pl-3 space-y-1">
                     <span className="text-gray-500 font-bold uppercase text-[10px] block">Ship To / Delivery Destination:</span>
-                    <div className="font-extrabold text-sm text-gray-900">{poCompany?.name || 'VNA TRADERS'} (Hosur Depot)</div>
-                    <div className="text-gray-700">{poCompany?.address ? `${poCompany.address}, ${poCompany.city || 'Hosur'}, ${poCompany.state || 'Tamil Nadu'} - ${poCompany.pincode || '635109'}` : 'Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109'}</div>
-                    <div className="text-gray-700">Depot Contact: {poCompany?.phone || '+91 94431 23456 / +91 94432 98765'}</div>
+                    <div className="font-extrabold text-sm text-gray-900">VNA TRADERS (Hosur Depot)</div>
+                    <div className="text-gray-700">Jeermangalam, Hosur, Krishnagiri Dist, Tamil Nadu - 635109</div>
+                    <div className="text-gray-700">Depot Contact: +91 94431 23456 / +91 94432 98765</div>
                     <div className="text-gray-700">Logistics: Direct Sivakasi Factory Transport / Lorry</div>
                   </div>
                 </div>
@@ -1299,19 +1259,17 @@ export const PurchaseOrdersPage: React.FC = () => {
 
                     <div className="text-center">
                       <div className="h-14 flex items-end justify-center text-gray-400 italic text-[11px]">
-                        For <strong>{poCompany?.name || 'VNA TRADERS'}</strong>
+                        For <strong>{docCompany?.name || 'VNA TRADERS'}</strong>
                       </div>
                       <div className="border-t border-gray-800 pt-1">
                         <div className="font-bold text-gray-900 text-xs">Authorized Signatory</div>
-                        <div className="text-[10px] text-gray-500">Purchase Management Office</div>
+                        <div className="text-[10px] text-gray-500">{docCompany?.city || 'Hosur'} Purchase Office</div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-              );
-            })()}
 
             {/* Actions Toolbar */}
             <div className="flex justify-end gap-2 pt-3 border-t border-border no-print">
@@ -1337,7 +1295,8 @@ export const PurchaseOrdersPage: React.FC = () => {
             </div>
           </div>
         </Dialog>
-      )}
+        );
+      })()}
 
       {/* QUICK CREATE PRODUCT MODAL */}
       <QuickProductModal
