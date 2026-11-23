@@ -288,7 +288,13 @@ export const SaleOrdersPage: React.FC = () => {
         return next;
       }
 
-      toast(`Added "${prod.name}" to order (${qty} boxes)`, 'success');
+      if ((prod.stock ?? 0) === 0) {
+        toast(`⚠️ Stock Alert: "${prod.name}" has 0 boxes in inventory (OUT OF STOCK)!`, 'error');
+      } else if (qty > (prod.stock ?? 0)) {
+        toast(`⚠️ Stock Warning: "${prod.name}" ordered (${qty}) exceeds stock (${prod.stock})!`, 'warning');
+      } else {
+        toast(`Added "${prod.name}" to order (${qty} boxes)`, 'success');
+      }
       return [
         ...prev,
         {
@@ -1214,6 +1220,32 @@ export const SaleOrdersPage: React.FC = () => {
                 placeholder="Type cracker name, code, brand (e.g. 1000 Wala, 50 Shots, Standard) to search and add..."
               />
             </div>
+
+            {/* Real-time Order Stock Shortage Alert */}
+            {(() => {
+              const shortageItems = soItems.filter((it) => {
+                if (!it.product_id) return false;
+                const p = products.find((prod) => prod.id === it.product_id);
+                return p && (p.stock === 0 || it.qty > (p.stock ?? 0));
+              });
+              if (shortageItems.length === 0) return null;
+              return (
+                <div className="bg-red-500/10 border-2 border-red-500/50 rounded-lg p-3 flex items-start gap-2.5 animate-in fade-in duration-200">
+                  <AlertCircle size={18} className="text-red-600 shrink-0 mt-0.5 stock-blink-danger" />
+                  <div className="text-xs">
+                    <span className="font-black text-red-700 dark:text-red-400 uppercase tracking-wide block">
+                      ⚠️ Stock Alert: Insufficient inventory for {shortageItems.length} ordered product{shortageItems.length > 1 ? 's' : ''}!
+                    </span>
+                    <p className="text-text-muted mt-0.5">
+                      {shortageItems.map((it) => {
+                        const p = products.find((prod) => prod.id === it.product_id);
+                        return `"${it.product_name}" (Ordered: ${it.qty}, Available: ${p?.stock ?? 0})`;
+                      }).join(' • ')}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Full Visibility Ordered Items Table (no inner overflow squish trap) */}
             <div className="overflow-x-auto border border-border/80 rounded-lg bg-surface shadow-xs">

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db, restoreMissingBills, initLocalDatabase, DEFAULT_COMPANY_ID } from '@/db';
 import { useCompany } from '@/features/companies/CompanyContext';
 import { syncService } from '@/sync/syncService';
-import { Product, Bill, TargetProgress } from '@/types';
-import { formatINR, formatNumber, formatISTDate } from '@/lib/format';
+import { Product, Bill, TargetProgress, SaleOrderItem } from '@/types';
+import { formatINR, formatNumber, formatISTDate, formatDateDMY } from '@/lib/format';
 import {
   AreaChart,
   Area,
@@ -45,6 +46,29 @@ import {
   X,
 } from 'lucide-react';
 
+export interface SaleOrderStockAlert {
+  soId: string;
+  soNo: string;
+  customerName: string;
+  customerPhone?: string;
+  orderDate: string;
+  deliveryDueDate?: string;
+  totalAmount: number;
+  status: string;
+  severity: 'zero' | 'low';
+  affectedItems: Array<{
+    productId?: string;
+    productCode: string;
+    productName: string;
+    brand: string;
+    orderedQty: number;
+    availableStock: number;
+    minStock: number;
+    isZeroStock: boolean;
+    shortage: number;
+  }>;
+}
+
 export interface ProductSalesStat {
   productId: string;
   code: string;
@@ -78,6 +102,7 @@ export interface ProductSalesStat {
 }
 
 export const DashboardPage: React.FC = () => {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { activeCompany, activeCompanyId, isAllCompanies } = useCompany();
@@ -118,12 +143,22 @@ export const DashboardPage: React.FC = () => {
         syncService.triggerSync().catch(() => {});
       }
 
-      const [allBillsRaw, allItemsRaw, allProductsRaw, allProfiles, targetSetting] = await Promise.all([
+      const [
+        allBillsRaw,
+        allItemsRaw,
+        allProductsRaw,
+        allProfiles,
+        targetSetting,
+        allSosRaw,
+        allSoItemsRaw,
+      ] = await Promise.all([
         db.bills.toArray(),
         db.bill_items.toArray(),
         db.products.toArray(),
         db.profiles.toArray(),
         db.settings.get('monthly_target'),
+        db.sale_orders.toArray(),
+        db.sale_order_items.toArray(),
       ]);
 
       // Filter by active company workspace
@@ -488,6 +523,103 @@ export const DashboardPage: React.FC = () => {
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         .slice(0, 8);
 
+      // Real-Time Stock Inventory Alerts for Active Company Workspace
+      const zeroStockProducts = allProducts
+        .filter((p) => p.is_active !== false && (p.stock ?? 0) === 0)
+        .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+
+      const lowStockProducts = allProducts
+        .filter(
+          (p) =>
+            p.is_active !== false &&
+            (p.stock ?? 0) > 0 &&
+            (p.stock ?? 0) <= (p.min_stock ?? 20)
+        )
+        .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0));
+
+      // Compute Sale Order Stock Alerts (No Stock and Low Stock first!)
+      const allSos = allSosRaw.filter(
+        (o) =>
+          (isAllCompanies ||
+            o.company_id === activeCompanyId ||
+            (!o.company_id && activeCompanyId === DEFAULT_COMPANY_ID) ||
+            activeCompanyId === DEFAULT_COMPANY_ID) &&
+          o.status !== 'delivered' &&
+          o.status !== 'cancelled'
+      );
+
+      const soItemsBySoId = new Map<string, SaleOrderItem[]>();
+      allSoItemsRaw.forEach((it) => {
+        if (!soItemsBySoId.has(it.so_id)) {
+          soItemsBySoId.set(it.so_id, []);
+        }
+        soItemsBySoId.get(it.so_id)!.push(it);
+      });
+
+      const saleOrderAlerts: SaleOrderStockAlert[] = [];
+
+      allSos.forEach((so) => {
+        const items = soItemsBySoId.get(so.id) || [];
+        const affected: SaleOrderStockAlert['affectedItems'] = [];
+        let hasZero = false;
+
+        items.forEach((it) => {
+          const p = it.product_id
+            ? prodMap.get(it.product_id)
+            : it.product_code
+            ? prodCodeMap.get(it.product_code.trim().toUpperCase())
+            : it.product_name
+            ? prodNameMap.get(it.product_name.trim().toLowerCase())
+            : undefined;
+
+          if (p) {
+            const stock = Number(p.stock) || 0;
+            const minStock = Number(p.min_stock) || 20;
+            const orderedQty = Number(it.qty) || 0;
+            const isZero = stock === 0;
+            const isShort = orderedQty > stock;
+            const isLow = stock > 0 && stock <= minStock;
+
+            if (isZero || isShort || isLow) {
+              if (isZero) hasZero = true;
+              affected.push({
+                productId: p.id,
+                productCode: p.code || it.product_code || '',
+                productName: p.name || it.product_name,
+                brand: p.brand || it.brand || 'Standard',
+                orderedQty,
+                availableStock: stock,
+                minStock,
+                isZeroStock: isZero,
+                shortage: Math.max(0, orderedQty - stock),
+              });
+            }
+          }
+        });
+
+        if (affected.length > 0) {
+          saleOrderAlerts.push({
+            soId: so.id,
+            soNo: so.so_no,
+            customerName: so.customer_name,
+            customerPhone: so.customer_phone,
+            orderDate: so.order_date,
+            deliveryDueDate: so.delivery_due_date,
+            totalAmount: so.total_amount,
+            status: so.status,
+            severity: hasZero ? 'zero' : 'low',
+            affectedItems: affected,
+          });
+        }
+      });
+
+      // Show NO STOCKS FIRST ('zero'), then LOW STOCKS ('low'), then by date (most recent first)
+      saleOrderAlerts.sort((a, b) => {
+        if (a.severity === 'zero' && b.severity !== 'zero') return -1;
+        if (b.severity === 'zero' && a.severity !== 'zero') return 1;
+        return new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime();
+      });
+
       return {
         kpis: {
           revenue: { current: currentRevenue, prev: prevRevenue },
@@ -508,6 +640,9 @@ export const DashboardPage: React.FC = () => {
         lowSelling,
         zeroSelling,
         allStatsList,
+        zeroStockProducts,
+        lowStockProducts,
+        saleOrderAlerts,
         targetProgress,
         recentBills,
         profiles: profMap,
@@ -613,7 +748,18 @@ export const DashboardPage: React.FC = () => {
     );
   }
 
-  const { kpis, timelineChart, isHourly, categoryChart, brandChart, targetProgress, recentBills } = data;
+  const {
+    kpis,
+    timelineChart,
+    isHourly,
+    categoryChart,
+    brandChart,
+    targetProgress,
+    recentBills,
+    zeroStockProducts = [],
+    lowStockProducts = [],
+    saleOrderAlerts = [],
+  } = data;
 
   const totalPaymentSum = kpis.payments.cash.amount + kpis.payments.upi.amount + kpis.payments.card.amount || 1;
   const cashPct = Math.round((kpis.payments.cash.amount / totalPaymentSum) * 100);
@@ -713,7 +859,11 @@ export const DashboardPage: React.FC = () => {
         </div>
       )}
 
-      {/* 4 PRIMARY EXECUTIVE METRIC CARDS */}
+      {/* 2-COLUMN DASHBOARD MASTER GRID: LEFT ANALYTICS + RIGHT-SIDE ALERTS COLUMN */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+        {/* LEFT MAIN AREA: Executive Metrics & Sales Analytics (xl:col-span-8) */}
+        <div className="xl:col-span-8 space-y-5 min-w-0">
+          {/* 4 PRIMARY EXECUTIVE METRIC CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Metric 1: Total Revenue */}
         <div className="bg-surface border border-border rounded-lg p-4 space-y-2 shadow-xs hover:border-accent/40 transition-colors">
@@ -1325,6 +1475,248 @@ export const DashboardPage: React.FC = () => {
           </table>
         </div>
       </div>
+        </div>
+        {/* END LEFT COLUMN */}
+
+        {/* RIGHT COLUMN: Dedicated Live Stock & Sale Order Alerts Panel (xl:col-span-4) */}
+        <div className="xl:col-span-4 space-y-4">
+          <div className="bg-surface border-2 border-red-500/40 rounded-xl p-4 shadow-md space-y-3.5 sticky top-4">
+            {/* Alert Header */}
+            <div className="border-b border-border/80 pb-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-full bg-red-600 text-white animate-bounce shadow-xs">
+                    <AlertTriangle size={16} />
+                  </span>
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-red-700 dark:text-red-400">
+                      LIVE STOCK &amp; ORDER ALERTS
+                    </h3>
+                    <p className="text-[11px] text-text-muted mt-0.5">
+                      {activeCompany?.name || 'VNA TRADERS'} • Real-Time Inventory Actions
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  className="h-7 px-2 text-[10px] font-bold"
+                  title="Refresh live alert telemetry"
+                >
+                  <RefreshCw size={11} className={isFetching ? 'animate-spin' : ''} />
+                </Button>
+              </div>
+
+              {/* Alert Counter Badges */}
+              <div className="flex items-center gap-2 mt-2.5">
+                <span className={`inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-xs ${
+                  saleOrderAlerts.some((s) => s.severity === 'zero') || zeroStockProducts.length > 0
+                    ? 'bg-red-600 text-white stock-blink-danger'
+                    : 'bg-surface border border-border text-text-muted'
+                }`}>
+                  <PackageX size={11} />
+                  {saleOrderAlerts.filter((s) => s.severity === 'zero').length} SO NO STOCK
+                </span>
+
+                <span className={`inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-xs ${
+                  saleOrderAlerts.some((s) => s.severity === 'low') || lowStockProducts.length > 0
+                    ? 'bg-amber-500 text-white stock-blink-warning'
+                    : 'bg-surface border border-border text-text-muted'
+                }`}>
+                  <AlertTriangle size={11} />
+                  {saleOrderAlerts.filter((s) => s.severity === 'low').length} SO SHORTAGE
+                </span>
+              </div>
+            </div>
+
+            {/* SECTION 1: SALE ORDER STOCK ALERTS (NO STOCKS FIRST, THEN LOW STOCKS!) */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-black uppercase tracking-wider text-text flex items-center gap-1.5 text-[11px]">
+                  <ShoppingBag size={14} className="text-accent" />
+                  <span>Sale Orders Requiring Stock ({saleOrderAlerts.length})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigate('/sale-orders')}
+                  className="text-[10px] font-bold text-accent hover:underline"
+                >
+                  All Orders →
+                </button>
+              </div>
+
+              {saleOrderAlerts.length === 0 ? (
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                  <span className="font-bold text-emerald-600">✓</span>
+                  <span>All active sale orders have full inventory in stock!</span>
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
+                  {saleOrderAlerts.map((so) => (
+                    <div
+                      key={so.soId}
+                      className={`p-3 rounded-lg border-2 space-y-2 shadow-2xs transition-all ${
+                        so.severity === 'zero'
+                          ? 'bg-red-500/10 border-red-500/60'
+                          : 'bg-amber-500/10 border-amber-500/60'
+                      }`}
+                    >
+                      {/* Sale Order Details Header */}
+                      <div className="flex items-start justify-between gap-1.5 border-b border-border/50 pb-1.5">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-xs font-black text-accent bg-surface px-1.5 py-0.5 rounded border border-border">
+                              {so.soNo}
+                            </span>
+                            <span className="text-[10px] font-bold text-text-muted flex items-center gap-0.5">
+                              <Calendar size={11} className="text-accent" />
+                              {formatDateDMY(so.orderDate)}
+                            </span>
+                          </div>
+                          <div className="font-bold text-xs text-text mt-1 truncate" title={so.customerName}>
+                            {so.customerName}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          {so.severity === 'zero' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-red-600 text-white stock-blink-danger shadow-xs">
+                              <PackageX size={10} />
+                              NO STOCK
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white stock-blink-warning shadow-xs">
+                              <AlertTriangle size={10} />
+                              SHORTAGE
+                            </span>
+                          )}
+                          <div className="text-[10px] font-mono text-text font-bold mt-0.5">
+                            {formatINR(so.totalAmount)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Same Row Structure for Affected Cracker Items */}
+                      <div className="space-y-1">
+                        {so.affectedItems.map((it, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between p-1.5 rounded bg-surface border border-border/70 text-xs shadow-2xs"
+                          >
+                            <div className="min-w-0 pr-1.5">
+                              <div className="flex items-center gap-1">
+                                <span className="font-mono text-[9px] font-bold text-accent">[{it.productCode}]</span>
+                                <span className="font-bold truncate text-[11px]">{it.productName}</span>
+                              </div>
+                              <span className="text-[10px] text-text-muted">
+                                Ordered: <strong className="text-text font-mono">{it.orderedQty}</strong>
+                              </span>
+                            </div>
+
+                            <div className="shrink-0 text-right">
+                              {it.isZeroStock ? (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase bg-red-600 text-white stock-blink-danger">
+                                  0 Stock!
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-500 text-white stock-blink-warning">
+                                  Avl: {it.availableStock} (-{it.shortage})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 1-Click Action to Sale Order */}
+                      <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[10px]">
+                        <span className="text-text-muted uppercase font-semibold">
+                          Status: <strong className="text-text capitalize">{so.status}</strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => navigate('/sale-orders')}
+                          className="font-bold text-accent hover:underline flex items-center gap-0.5"
+                        >
+                          Open Sale Order →
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 2: CATALOG INVENTORY STOCK SHORTAGES */}
+            <div className="border-t border-border/80 pt-3 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-black uppercase tracking-wider text-text flex items-center gap-1.5 text-[11px]">
+                  <Boxes size={14} className="text-accent" />
+                  <span>Godown Inventory Stock ({zeroStockProducts.length + lowStockProducts.length})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigate('/stock')}
+                  className="text-[10px] font-bold text-accent hover:underline"
+                >
+                  Manage Stock →
+                </button>
+              </div>
+
+              <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
+                {[...zeroStockProducts, ...lowStockProducts].map((p) => {
+                  const isZero = (p.stock ?? 0) === 0;
+                  return (
+                    <div
+                      key={p.id}
+                      className={`flex items-center justify-between p-2 rounded-lg border text-xs shadow-2xs ${
+                        isZero
+                          ? 'bg-red-500/15 border-red-500/40 text-red-900 dark:text-red-200'
+                          : 'bg-amber-500/15 border-amber-500/40 text-amber-900 dark:text-amber-200'
+                      }`}
+                    >
+                      <div className="min-w-0 pr-1.5">
+                        <span className="font-mono text-[9px] font-bold opacity-75 mr-1">[{p.code}]</span>
+                        <span className="font-bold truncate text-[11px] block">{p.name}</span>
+                        <span className="text-[10px] opacity-70">{p.brand || 'Standard'}</span>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {isZero ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase bg-red-600 text-white stock-blink-danger">
+                            0 Stock
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-500 text-white stock-blink-warning">
+                            {p.stock} (Min: {p.min_stock || 20})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="pt-1">
+                <Button
+                  variant="primary"
+                  fullWidth
+                  size="sm"
+                  onClick={() => navigate('/stock')}
+                  className="py-1.5 text-xs font-bold bg-accent hover:bg-accent/90 text-white shadow-xs"
+                >
+                  <Boxes size={13} />
+                  <span>Update Stock &amp; Audit Inventory</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* END RIGHT COLUMN */}
+      </div>
+      {/* END 2-COLUMN DASHBOARD MASTER GRID */}
 
       {/* INTERACTIVE PRODUCT SALES DRILL-DOWN MODAL */}
       {selectedProduct && (

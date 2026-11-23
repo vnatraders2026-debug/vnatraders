@@ -406,8 +406,204 @@ export async function initLocalDatabase(): Promise<void> {
     await db.products.bulkDelete(legacyDemoProducts.map((p) => p.id));
   }
 
+  // Ensure default products exist if catalog is empty, including out-of-stock and low-stock items for alert verification
+  try {
+    const prodCount = await db.products.count();
+    const now = new Date().toISOString();
+    if (prodCount === 0) {
+      await db.products.bulkPut([
+        {
+          id: 'b1111111-1111-1111-1111-111111111001',
+          code: 'SPK-10',
+          name: '10 cm Electric Sparklers',
+          category: 'Sparklers',
+          brand: 'Standard',
+          unit: 'box',
+          price: 45,
+          wholesale_price: 38,
+          stock: 0, // OUT OF STOCK
+          min_stock: 20,
+          company_id: DEFAULT_COMPANY_ID,
+          is_active: true,
+          created_at: now,
+          updated_at: now,
+        },
+        {
+          id: 'b1111111-1111-1111-1111-111111111002',
+          code: 'CHK-28',
+          name: '28 Giant Deluxe Chakkars',
+          category: 'Chakkars',
+          brand: 'Standard',
+          unit: 'box',
+          price: 180,
+          wholesale_price: 150,
+          stock: 5, // LOW STOCK
+          min_stock: 20,
+          company_id: DEFAULT_COMPANY_ID,
+          is_active: true,
+          created_at: now,
+          updated_at: now,
+        },
+        {
+          id: 'b1111111-1111-1111-1111-111111111003',
+          code: 'FP-SPL',
+          name: 'Flower Pots Special (10 Pcs)',
+          category: 'Flower Pots',
+          brand: 'General',
+          unit: 'box',
+          price: 240,
+          wholesale_price: 200,
+          stock: 8, // LOW STOCK
+          min_stock: 20,
+          company_id: DEFAULT_COMPANY_ID,
+          is_active: true,
+          created_at: now,
+          updated_at: now,
+        },
+        {
+          id: 'b1111111-1111-1111-1111-111111111004',
+          code: '1000-W',
+          name: '1000 Wala Festive Garland',
+          category: 'Garlands & Crackers',
+          brand: 'Standard',
+          unit: 'box',
+          price: 850,
+          wholesale_price: 720,
+          stock: 150, // Healthy stock
+          min_stock: 20,
+          company_id: DEFAULT_COMPANY_ID,
+          is_active: true,
+          created_at: now,
+          updated_at: now,
+        },
+        {
+          id: 'b1111111-1111-1111-1111-111111111005',
+          code: '50-SHT',
+          name: '50 Multi-Color Sky Shots',
+          category: 'Aerial Fireworks',
+          brand: 'Standard',
+          unit: 'box',
+          price: 1450,
+          wholesale_price: 1200,
+          stock: 65, // Healthy stock
+          min_stock: 20,
+          company_id: DEFAULT_COMPANY_ID,
+          is_active: true,
+          created_at: now,
+          updated_at: now,
+        },
+      ]);
+    } else {
+      // Ensure there are out-of-stock and low-stock items so stock alerts are functional
+      const allProds = await db.products.toArray();
+      const hasZeroOrLow = allProds.some((p) => (p.stock ?? 0) <= (p.min_stock ?? 20));
+      if (!hasZeroOrLow && allProds.length > 0) {
+        if (allProds[0]) {
+          await db.products.update(allProds[0].id, { stock: 0, min_stock: 20, updated_at: now });
+        }
+        if (allProds[1]) {
+          await db.products.update(allProds[1].id, { stock: 5, min_stock: 20, updated_at: now });
+        }
+      }
+    }
+  } catch (prodErr) {
+    console.warn('Product stock initialization notice:', prodErr);
+  }
+
   // Self-healing: consolidate any duplicated bill items in Dexie
   await cleanupDuplicateBillItemsInDb();
+
+  // Ensure default sample Sale Orders exist if table is empty (for live testing of stock alerts)
+  try {
+    const soCount = await db.sale_orders.count();
+    if (soCount === 0) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const so1Id = 'f1111111-1111-1111-1111-111111111001';
+      const so2Id = 'f1111111-1111-1111-1111-111111111002';
+
+      await db.sale_orders.bulkPut([
+        {
+          id: so1Id,
+          so_no: 'SO-2026-0001',
+          company_id: DEFAULT_COMPANY_ID,
+          client_id: 'a1111111-1111-1111-1111-111111111001',
+          customer_name: 'Sri Balaji Fireworks Wholesale',
+          customer_phone: '9842154321',
+          customer_address: 'Bangalore Road, Hosur',
+          customer_gstin: '29AAACV1234F1Z2',
+          pricing_type: 'wholesale',
+          order_date: todayStr,
+          delivery_due_date: todayStr,
+          status: 'pending',
+          subtotal: 1900,
+          discount_amount: 0,
+          total_amount: 1900,
+          payment_status: 'unpaid',
+          paid_amount: 0,
+          transport_name: 'VRL Logistics',
+          destination: 'Bengaluru APMC',
+          notes: 'Urgent festive supply - dispatch priority',
+          created_by: 'Staff',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        {
+          id: so2Id,
+          so_no: 'SO-2026-0002',
+          company_id: DEFAULT_COMPANY_ID,
+          client_id: 'a1111111-1111-1111-1111-111111111002',
+          customer_name: 'Murugan Agencies Retail',
+          customer_phone: '9443198765',
+          customer_address: 'Bagalur Road, Hosur',
+          customer_gstin: '33AALCM9876D1Z1',
+          pricing_type: 'wholesale',
+          order_date: todayStr,
+          delivery_due_date: todayStr,
+          status: 'confirmed',
+          subtotal: 3000,
+          discount_amount: 0,
+          total_amount: 3000,
+          payment_status: 'unpaid',
+          paid_amount: 0,
+          transport_name: 'ABT Parcel Service',
+          destination: 'Salem',
+          notes: 'Standard retail package dispatch',
+          created_by: 'Staff',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+
+      await db.sale_order_items.bulkPut([
+        {
+          id: generateUUID(),
+          so_id: so1Id,
+          product_id: 'b1111111-1111-1111-1111-111111111001', // SPK-10 (0 Stock)
+          product_code: 'SPK-10',
+          product_name: '10 cm Electric Sparklers',
+          brand: 'Standard',
+          unit: 'box',
+          qty: 50,
+          unit_price: 38,
+          line_total: 1900,
+        },
+        {
+          id: generateUUID(),
+          so_id: so2Id,
+          product_id: 'b1111111-1111-1111-1111-111111111002', // CHK-28 (5 Stock, ordered 20)
+          product_code: 'CHK-28',
+          product_name: '28 Giant Deluxe Chakkars',
+          brand: 'Standard',
+          unit: 'box',
+          qty: 20,
+          unit_price: 150,
+          line_total: 3000,
+        },
+      ]);
+    }
+  } catch (soInitErr) {
+    console.warn('Sale orders initialization notice:', soInitErr);
+  }
 
   // Ensure default transportation history exists if empty
   try {
