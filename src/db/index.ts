@@ -559,7 +559,7 @@ export async function initLocalDatabase(): Promise<void> {
           pricing_type: 'wholesale',
           order_date: todayStr,
           delivery_due_date: todayStr,
-          status: 'confirmed',
+          status: 'pending',
           subtotal: 3000,
           discount_amount: 0,
           total_amount: 3000,
@@ -600,6 +600,12 @@ export async function initLocalDatabase(): Promise<void> {
           line_total: 3000,
         },
       ]);
+    } else {
+      // Ensure SO-2026-0002 has status 'pending' if it was previously seeded as 'confirmed'
+      const existingSo2 = await db.sale_orders.get('f1111111-1111-1111-1111-111111111002');
+      if (existingSo2 && existingSo2.status === 'confirmed') {
+        await db.sale_orders.update('f1111111-1111-1111-1111-111111111002', { status: 'pending' });
+      }
     }
   } catch (soInitErr) {
     console.warn('Sale orders initialization notice:', soInitErr);

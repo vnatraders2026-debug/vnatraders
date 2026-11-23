@@ -44,6 +44,7 @@ import {
   ShoppingBag,
   Layers,
   X,
+  ChevronRight,
 } from 'lucide-react';
 
 export interface SaleOrderStockAlert {
@@ -537,15 +538,14 @@ export const DashboardPage: React.FC = () => {
         )
         .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0));
 
-      // Compute Sale Order Stock Alerts (No Stock and Low Stock first!)
+      // Compute Sale Order Stock Alerts (ONLY status === 'pending' - exclude dispatched/delivered)
       const allSos = allSosRaw.filter(
         (o) =>
           (isAllCompanies ||
             o.company_id === activeCompanyId ||
             (!o.company_id && activeCompanyId === DEFAULT_COMPANY_ID) ||
             activeCompanyId === DEFAULT_COMPANY_ID) &&
-          o.status !== 'delivered' &&
-          o.status !== 'cancelled'
+          o.status === 'pending'
       );
 
       const soItemsBySoId = new Map<string, SaleOrderItem[]>();
@@ -598,6 +598,13 @@ export const DashboardPage: React.FC = () => {
         });
 
         if (affected.length > 0) {
+          // Sort items inside order: Zero stock first, then highest shortage
+          affected.sort((a, b) => {
+            if (a.isZeroStock && !b.isZeroStock) return -1;
+            if (!a.isZeroStock && b.isZeroStock) return 1;
+            return b.shortage - a.shortage;
+          });
+
           saleOrderAlerts.push({
             soId: so.id,
             soNo: so.so_no,
@@ -859,10 +866,62 @@ export const DashboardPage: React.FC = () => {
         </div>
       )}
 
+      {/* PROMINENT STOCK & PENDING ORDER ALERT BANNER (Visible immediately on login) */}
+      {(saleOrderAlerts.length > 0 || zeroStockProducts.length > 0 || lowStockProducts.length > 0) && (
+        <div className="rounded-xl border-2 border-red-500/60 bg-red-500/10 dark:bg-red-950/20 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2.5">
+            <span className="p-2 rounded-full bg-red-600 text-white animate-bounce shadow-md">
+              <AlertTriangle size={18} />
+            </span>
+            <div>
+              <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-red-700 dark:text-red-400 flex items-center gap-2">
+                <span>CRITICAL LIVE ALERTS: PENDING ORDERS &amp; GODOWN INVENTORY</span>
+              </h3>
+              <p className="text-[11px] text-text-muted mt-0.5">
+                {saleOrderAlerts.filter((s) => s.severity === 'zero').length > 0
+                  ? `${saleOrderAlerts.filter((s) => s.severity === 'zero').length} pending sale order(s) have ZERO godown stock and require immediate restocking.`
+                  : saleOrderAlerts.length > 0
+                  ? `${saleOrderAlerts.length} pending sale order(s) have inventory shortages.`
+                  : `${zeroStockProducts.length} product(s) in godown have completely run out of stock.`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {saleOrderAlerts.filter((s) => s.severity === 'zero').length > 0 && (
+              <span className="inline-flex items-center gap-1 bg-red-600 text-white text-[11px] font-black px-3 py-1 rounded-full shadow-xs stock-blink-danger">
+                <PackageX size={13} />
+                {saleOrderAlerts.filter((s) => s.severity === 'zero').length} SO NO STOCK
+              </span>
+            )}
+            {saleOrderAlerts.filter((s) => s.severity === 'low').length > 0 && (
+              <span className="inline-flex items-center gap-1 bg-amber-500 text-white text-[11px] font-black px-3 py-1 rounded-full shadow-xs stock-blink-warning">
+                <AlertTriangle size={13} />
+                {saleOrderAlerts.filter((s) => s.severity === 'low').length} SO SHORTAGE
+              </span>
+            )}
+            {zeroStockProducts.length > 0 && (
+              <span className="inline-flex items-center gap-1 bg-red-700 text-white text-[11px] font-black px-2.5 py-1 rounded-full shadow-xs">
+                {zeroStockProducts.length} GODOWN ZERO
+              </span>
+            )}
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => navigate('/stock')}
+              className="text-xs font-bold gap-1 bg-red-600 hover:bg-red-700 text-white shadow-xs ml-auto sm:ml-0"
+            >
+              <span>Manage Stock</span>
+              <ChevronRight size={13} />
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* 2-COLUMN DASHBOARD MASTER GRID: LEFT ANALYTICS + RIGHT-SIDE ALERTS COLUMN */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-        {/* LEFT MAIN AREA: Executive Metrics & Sales Analytics (xl:col-span-8) */}
-        <div className="xl:col-span-8 space-y-5 min-w-0">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* LEFT MAIN AREA: Executive Metrics & Sales Analytics (lg:col-span-7 xl:col-span-8) */}
+        <div className="lg:col-span-7 xl:col-span-8 space-y-5 min-w-0">
           {/* 4 PRIMARY EXECUTIVE METRIC CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Metric 1: Total Revenue */}
@@ -1478,8 +1537,8 @@ export const DashboardPage: React.FC = () => {
         </div>
         {/* END LEFT COLUMN */}
 
-        {/* RIGHT COLUMN: Dedicated Live Stock & Sale Order Alerts Panel (xl:col-span-4) */}
-        <div className="xl:col-span-4 space-y-4">
+        {/* RIGHT COLUMN: Dedicated Live Stock & Sale Order Alerts Panel (lg:col-span-5 xl:col-span-4) */}
+        <div className="lg:col-span-5 xl:col-span-4 space-y-4">
           <div className="bg-surface border-2 border-red-500/40 rounded-xl p-4 shadow-md space-y-3.5 sticky top-4">
             {/* Alert Header */}
             <div className="border-b border-border/80 pb-3">
